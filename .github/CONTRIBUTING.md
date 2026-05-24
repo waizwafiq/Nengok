@@ -136,20 +136,22 @@ source .venv/bin/activate
 python -m sample_agent.agent --inject all
 ```
 
-Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation produces one trace, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
+Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation flips the mock tool outputs into their broken shapes, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
 
-Refresh <http://localhost:6006> and you should see a `travel-planner-agent` project in Phoenix's sidebar with traces under it. If the agent prints `WARNING: PHOENIX_BASE_URL is not set`, your `.env` is missing or you are running from the wrong directory.
+Heads up: `sample_agent/agent.py`'s `build_itinerary` is currently a stand-in. It calls Python mock tools directly and does not yet make a real Gemini call, so `phoenix.otel.register(auto_instrument=True)` has nothing to wrap. The OTel exporter starts up but emits no spans, and Phoenix will not auto-create the `travel-planner-agent` project from these runs alone. Wiring a real LLM call into `build_itinerary` is tracked work; until then, `nengok run` against the project will 404. If you want to exercise the full Observe -> Diagnose -> Fix -> Verify loop today, either land that LLM call or seed the project with spans from another instrumented script.
+
+If the agent prints `WARNING: PHOENIX_BASE_URL is not set`, your `.env` is missing or you are running from the wrong directory.
 
 ### 6. Run a Nengok cycle
 
 ```bash
-nengok init
+nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
 nengok run
 ```
 
-`nengok init` writes config to `~/.nengok/config.toml`. It reads `PHOENIX_BASE_URL`, `PHOENIX_API_KEY`, and `NENGOK_PROJECT` from your `.env`, so no flags are needed when the defaults work. If you want to override anything, the flags still exist: `nengok init --phoenix-url <url> --project <name>`.
+`nengok init` writes config to `~/.nengok/config.toml`. `--phoenix-url` is required; `--project` defaults to the literal string `"default"` if you omit it, so pass `--project travel-planner-agent` to match the sample agent. If your Phoenix needs auth, add `--api-key <key>`; otherwise `nengok run` falls back to `PHOENIX_API_KEY` from your `.env` at request time. (Today the CLI does not read `PHOENIX_BASE_URL` or `NENGOK_PROJECT` from `.env` — only `PHOENIX_API_KEY` is picked up later at runtime.)
 
-If `nengok run` reports `404 Not Found` on the spans endpoint, the Phoenix project does not exist yet. Go back to step 5 and confirm the sample agent is actually emitting traces (check the Phoenix UI).
+If `nengok run` reports `404 Not Found` on the spans endpoint, the Phoenix project does not exist yet. The current `sample_agent` stub does not emit spans (see step 5), so a fresh Phoenix install will hit this until you wire a real LLM call into `build_itinerary` or seed the project from another instrumented script.
 
 ### 7. Launch the dashboard (optional)
 
