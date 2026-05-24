@@ -32,6 +32,7 @@ DEFAULT_MIN_CLUSTER_SIZE = 3
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
 DEFAULT_GOLDEN_REGRESSION_LIMIT = 0.02
 DEFAULT_DRY_RUN_SAMPLES = 3
+DEFAULT_CLUSTER_TRACE_CHAR_BUDGET = 2000
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
@@ -55,6 +56,7 @@ class NengokConfig:
     regression_pass_threshold: float = DEFAULT_REGRESSION_PASS_THRESHOLD
     golden_regression_limit: float = DEFAULT_GOLDEN_REGRESSION_LIMIT
     dry_run_samples: int = DEFAULT_DRY_RUN_SAMPLES
+    cluster_trace_char_budget: int = DEFAULT_CLUSTER_TRACE_CHAR_BUDGET
 
     artifacts_dir: Path = field(default_factory=lambda: DEFAULT_ARTIFACTS_DIR)
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
