@@ -130,8 +130,12 @@ class _Clusterer:
 
 
 class _Hypothesizer:
-    def hypothesize(self, cluster: Cluster) -> RootCauseHypothesis:
+    def __init__(self) -> None:
+        self.calls: list[str | None] = []
+
+    def hypothesize(self, cluster: Cluster, *, current_prompt: str | None = None) -> RootCauseHypothesis:
         del cluster
+        self.calls.append(current_prompt)
         return _HYPOTHESIS
 
 
@@ -147,10 +151,18 @@ class _TestGenerator:
 
 
 class _PromptProposer:
-    def propose(self, cluster: Cluster) -> PromptProposal:
+    def __init__(self, baseline: str = "BASE") -> None:
+        self._baseline = baseline
+        self.injected_baselines: list[str | None] = []
+
+    def load_baseline_prompt(self) -> str:
+        return self._baseline
+
+    def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
+        self.injected_baselines.append(baseline_prompt)
         return PromptProposal(
             cluster_id=cluster.cluster_id,
-            baseline_prompt="BASE",
+            baseline_prompt=baseline_prompt or self._baseline,
             proposed_prompt="FIX",
             rationale="r",
         )
@@ -379,6 +391,27 @@ def test_dry_run_skips_verifier_span(
     assert writer.writes == []
     cycle = patched_tracer.by_name("nengok.cycle")[0]
     assert cycle.attributes["nengok.dry_run"] is True
+
+
+def test_baseline_prompt_threaded_to_hypothesizer_and_proposer(
+    tmp_path: Path,
+    patched_tracer: _RecordingTracer,
+    register_calls: list[int],
+) -> None:
+    del patched_tracer, register_calls
+    anomalies = [_make_anomaly("s1", [AnomalySignal.HIGH_LATENCY])]
+    cluster = _make_cluster("cid-1", "drift", ["s1"])
+    orch, _, _ = _build_orchestrator(tmp_path, anomalies=anomalies, clusters=[cluster])
+
+    hypothesizer = _Hypothesizer()
+    proposer = _PromptProposer(baseline="BASELINE-PROMPT")
+    orch._hypothesizer = hypothesizer
+    orch._prompt_proposer = proposer
+
+    orch.run_once()
+
+    assert hypothesizer.calls == ["BASELINE-PROMPT"]
+    assert proposer.injected_baselines == ["BASELINE-PROMPT"]
 
 
 def test_register_meta_tracer_runs_once_across_runs(

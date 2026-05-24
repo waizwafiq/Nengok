@@ -105,11 +105,13 @@ class Orchestrator:
             if not new_anomalies:
                 return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
 
+            baseline_prompt = self._prompt_proposer.load_baseline_prompt()
+
             with tracer.start_as_current_span("diagnoser") as diagnoser_span:
                 raw_clusters = self._clusterer.cluster(new_anomalies)
                 clusters: list[Cluster] = []
                 for raw in raw_clusters:
-                    hypothesis = self._hypothesizer.hypothesize(raw)
+                    hypothesis = self._hypothesizer.hypothesize(raw, current_prompt=baseline_prompt)
                     clusters.append(
                         raw.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
                     )
@@ -130,7 +132,7 @@ class Orchestrator:
                 with tracer.start_as_current_span("fixer") as fixer_span:
                     set_attributes(fixer_span, cluster_attrs)
                     cases = self._test_generator.generate(cluster)
-                    proposal = self._prompt_proposer.propose(cluster)
+                    proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
                     set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
 
                     if dry_run:

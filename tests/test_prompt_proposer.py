@@ -129,7 +129,7 @@ def test_load_baseline_prefers_sample_agent_file(tmp_config: NengokConfig) -> No
     phoenix = _FakePhoenix(prompt_versions={SAMPLE_AGENT_PROJECT: "PHOENIX-VERSION"})
     proposer = PromptProposer(config=sample_config, phoenix=phoenix)
 
-    baseline = proposer._load_baseline_prompt()
+    baseline = proposer.load_baseline_prompt()
 
     assert baseline.startswith("# Travel Planner")
     assert phoenix.prompt_calls == []
@@ -140,7 +140,7 @@ def test_load_baseline_falls_back_to_phoenix_prompt_management(tmp_config: Nengo
     phoenix = _FakePhoenix(prompt_versions={"some-other-agent": "PHOENIX-PROMPT-V7"})
     proposer = PromptProposer(config=other_config, phoenix=phoenix)
 
-    baseline = proposer._load_baseline_prompt()
+    baseline = proposer.load_baseline_prompt()
 
     assert baseline == "PHOENIX-PROMPT-V7"
     assert phoenix.prompt_calls == ["some-other-agent"]
@@ -156,7 +156,7 @@ def test_load_baseline_falls_back_to_config_path(tmp_config: NengokConfig, tmp_p
     )
     phoenix = _FakePhoenix(prompt_versions={})
 
-    baseline = PromptProposer(config=config, phoenix=phoenix)._load_baseline_prompt()
+    baseline = PromptProposer(config=config, phoenix=phoenix).load_baseline_prompt()
 
     assert baseline == "FROM-DISK"
 
@@ -166,7 +166,7 @@ def test_load_baseline_raises_when_no_source_available(tmp_config: NengokConfig)
     proposer = PromptProposer(config=config)
 
     with pytest.raises(RuntimeError, match="No baseline prompt"):
-        proposer._load_baseline_prompt()
+        proposer.load_baseline_prompt()
 
 
 def test_proposer_prompt_includes_hypothesis_and_exemplars(tmp_config: NengokConfig) -> None:

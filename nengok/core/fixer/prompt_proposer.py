@@ -50,8 +50,15 @@ class PromptProposer:
     phoenix: PhoenixWrapper | None = None
     gemini_call: GeminiTextCall | None = None
 
-    def propose(self, cluster: Cluster) -> PromptProposal:
-        baseline = self._load_baseline_prompt()
+    def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
+        """
+        Propose a prompt-level fix for ``cluster``.
+
+        ``baseline_prompt`` lets callers (the orchestrator) inject a
+        baseline they already loaded for upstream stages so the proposer
+        does not re-read it from disk or Phoenix.
+        """
+        baseline = baseline_prompt if baseline_prompt is not None else self.load_baseline_prompt()
         exemplars = self._load_exemplars(cluster)
         draft = self._call_gemini_proposer(cluster=cluster, baseline=baseline, exemplars=exemplars)
         return PromptProposal(
@@ -61,7 +68,7 @@ class PromptProposer:
             rationale=draft.rationale,
         )
 
-    def _load_baseline_prompt(self) -> str:
+    def load_baseline_prompt(self) -> str:
         """
         Resolve the agent's current prompt, in this precedence:
 
