@@ -23,7 +23,7 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "travel_planner.md"
 DEFAULT_MODEL = "gemini-2.5-flash"
 
 
-def build_itinerary(query: str) -> dict:
+def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
     """
     Plan an itinerary by calling the three mock tools and asking Gemini
     to compose them into a multi-day plan.
@@ -31,6 +31,10 @@ def build_itinerary(query: str) -> dict:
     Tool outputs and the system prompt are passed verbatim to Gemini so
     the injected failure modes (schema drift, unit mismatch, hotels
     timeout) surface as anomalies on the LLM span Phoenix records.
+
+    When ``prompt`` is supplied, that string replaces the bundled
+    baseline. The Phoenix experiment runner uses this to compare a
+    candidate fix against the on-disk prompt without touching the file.
     """
     from google import genai
 
@@ -45,7 +49,7 @@ def build_itinerary(query: str) -> dict:
     flights_data = flights.search_flights(origin="KUL", destination="HND")
     weather_data = weather.get_forecast(city="Tokyo")
 
-    system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    system_prompt = prompt if prompt is not None else PROMPT_PATH.read_text(encoding="utf-8")
     tool_payload = {
         "flights": flights_data,
         "weather": weather_data,
@@ -72,7 +76,7 @@ def build_itinerary(query: str) -> dict:
         "hotels": hotels_data,
         "hotels_error": hotels_error,
         "itinerary": response.text,
-        "prompt_source": PROMPT_PATH.name,
+        "prompt_source": "injected" if prompt is not None else PROMPT_PATH.name,
     }
 
 
