@@ -19,7 +19,7 @@ from typing import Any
 
 from nengok.config import NengokConfig
 from nengok.core.evaluators.code_evals import CodeEvaluator
-from nengok.core.evaluators.llm_judges import JudgeSpec
+from nengok.core.evaluators.llm_judges import JudgeSpec, _ensure_phoenix_judge
 from nengok.core.types import RegressionTestCase, TraceSpan
 from nengok.phoenix.spans import normalize_span
 from nengok.utils.logging import get_logger
@@ -122,6 +122,28 @@ class PhoenixWrapper:
         except ValueError:
             return None
 
+    def attach_evaluators(
+        self,
+        *,
+        experiment_id: str,
+        evaluators: list[CodeEvaluator | JudgeSpec],
+    ) -> Any:
+        """
+        Add evaluators to an existing experiment without re-running the task.
+
+        The dashboard uses this when an operator wants to score an old
+        experiment against a newly added judge. Phoenix exposes it as
+        ``evaluate_experiment``; the Nengok name makes intent obvious
+        at the call site.
+        """
+        client = self._get_client()
+        experiment = client.experiments.get_experiment(experiment_id=experiment_id)
+        resolved = _resolve_evaluators(evaluators)
+        return client.experiments.evaluate_experiment(
+            experiment=experiment,
+            evaluators=resolved,
+        )
+
     def run_experiment(
         self,
         *,
@@ -160,3 +182,14 @@ class PhoenixWrapper:
         logger.warning("Phoenix golden-set placeholder used")
         empty = _ExperimentRun(experiment_id=None, pass_rate=1.0, per_case=[])
         return empty, empty
+
+
+def _resolve_evaluators(evaluators: list[CodeEvaluator | JudgeSpec]) -> list[Any]:
+    """Turn the Nengok evaluator union into the heterogeneous list Phoenix wants."""
+    resolved: list[Any] = []
+    for evaluator in evaluators:
+        if isinstance(evaluator, JudgeSpec):
+            resolved.append(_ensure_phoenix_judge(evaluator))
+        else:
+            resolved.append(evaluator)
+    return resolved
