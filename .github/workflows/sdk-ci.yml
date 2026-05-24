@@ -70,6 +70,8 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
         run: pip install -e ".[dev]"
 
       - name: mypy
@@ -94,6 +96,8 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
         run: pip install -e ".[dev]"
 
       - name: Run unit tests
@@ -114,6 +118,8 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install package
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
         run: pip install -e .
 
       - name: Verify CLI is reachable

@@ -5,6 +5,14 @@ The dashboard is intentionally a single-process, single-user surface.
 It binds to 127.0.0.1 by default, mounts the pre-built Vite frontend
 under `/`, and exposes the cluster / experiment / approval routes
 under `/api/v1`.
+
+Static assets live in two possible locations:
+
+* `nengok/server/static/`: populated by `hatch_build.py` during wheel
+  build. This is what pip-installed users hit.
+* `frontend/dist/` at the repo root: populated by `npm run build`
+  during local development. Used as a fallback when running from a
+  source checkout without having reinstalled.
 """
 
 from __future__ import annotations
@@ -18,8 +26,20 @@ from fastapi.staticfiles import StaticFiles
 from nengok import __version__
 from nengok.config import NengokConfig
 from nengok.server.routes import approvals, artifacts, clusters, experiments
+from nengok.utils.logging import get_logger
 
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+_PACKAGE_STATIC_DIR = Path(__file__).resolve().parent / "static"
+_REPO_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+logger = get_logger(__name__)
+
+
+def _resolve_frontend_dir() -> Path | None:
+    if _PACKAGE_STATIC_DIR.is_dir():
+        return _PACKAGE_STATIC_DIR
+    if _REPO_FRONTEND_DIST.is_dir():
+        return _REPO_FRONTEND_DIST
+    return None
 
 
 def create_app(*, config: NengokConfig) -> FastAPI:
@@ -49,7 +69,25 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
-    if FRONTEND_DIST.exists():
-        app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    frontend_dir = _resolve_frontend_dir()
+    if frontend_dir is not None:
+        logger.info("serving dashboard assets from %s", frontend_dir)
+        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+    else:
+        logger.warning(
+            "dashboard assets not found; API routes will work but / will return JSON. "
+            "Reinstall nengok from a wheel, or run `cd frontend && npm install && npm run build`."
+        )
+
+        @app.get("/", include_in_schema=False)
+        def _missing_frontend() -> dict[str, str]:
+            return {
+                "error": "Nengok dashboard assets are not bundled with this install.",
+                "hint": (
+                    "Reinstall nengok from a wheel, or from a source checkout run "
+                    "`cd frontend && npm install && npm run build`."
+                ),
+                "api_docs": "/docs",
+            }
 
     return app

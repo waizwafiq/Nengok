@@ -17,14 +17,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md hatch_build.py ./
 COPY nengok/ ./nengok/
 COPY sample_agent/ ./sample_agent/
 
+COPY --from=frontend /frontend/dist ./nengok/server/static
+
+ENV NENGOK_SKIP_FRONTEND_BUILD=1
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir ".[phoenix,server]"
-
-COPY --from=frontend /frontend/dist ./frontend/dist
 
 ENV NENGOK_DASHBOARD_HOST=0.0.0.0 \
     NENGOK_DASHBOARD_PORT=8765

@@ -81,6 +81,8 @@ pip install -e ".[dev,phoenix]"
 
 You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`) and the Phoenix client. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it.
 
+The editable install also runs `npm install && vite build` in `frontend/` via a hatchling build hook so the dashboard works out of the box. This needs Node 22+ on your PATH and adds roughly 30 seconds on a cold install. If you don't have Node or only plan to work on Python, set `NENGOK_SKIP_FRONTEND_BUILD=1` before `pip install` and the hook is a no-op. In that case, `nengok dashboard` still serves the API but `/` returns a JSON hint instead of the UI until you build the frontend manually.
+
 ### 3. Create your `.env`
 
 **Windows (cmd):**
@@ -156,14 +158,18 @@ If `nengok run` reports `404 Not Found` on the spans endpoint, the Phoenix proje
 ### 7. Launch the dashboard (optional)
 
 ```bash
-nengok dashboard --no-browser
-# FastAPI server at http://localhost:8765
-# Vite dev server (if running) proxies to it at http://localhost:5173
+nengok dashboard
 ```
 
-The FastAPI server only mounts the React bundle at `/` when a pre-built copy exists in `frontend/dist/`. If you haven't built the frontend, hitting <http://localhost:8765> returns 404, so `--no-browser` keeps the CLI from auto-opening that tab.
+This boots the FastAPI server on <http://localhost:8765> and opens your browser to it. The dashboard bundle was built and copied into `nengok/server/static/` during step 2, so the install ships with the UI and `nengok dashboard` serves it directly without a separate Node process.
 
-For frontend development, in a separate terminal:
+Pass `--no-browser` to skip the auto-open.
+
+If `/` returns a JSON hint instead of the UI, the install either skipped the frontend build (look for `NENGOK_SKIP_FRONTEND_BUILD=1` in your env) or `npm` wasn't on PATH. Run `cd frontend && npm install && npm run build`, then restart `nengok dashboard`.
+
+#### Frontend development with HMR
+
+When you're iterating on `frontend/` source, run the Vite dev server in a separate terminal so changes hot-reload. The pre-built bundle in `nengok/server/static/` stays put; you just visit a different URL.
 
 **Windows:**
 
@@ -182,8 +188,6 @@ npm run dev
 ```
 
 Then visit <http://localhost:5173>. Vite proxies `/api` calls back to the FastAPI server, so keep `nengok dashboard --no-browser` running in another terminal.
-
-For single-port serving (no Node at runtime), build the bundle once with `npm run build` from `frontend/`. After that, `nengok dashboard` serves the app at <http://localhost:8765> directly and the `--no-browser` flag is no longer needed.
 
 ## Branch Naming
 

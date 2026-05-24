@@ -45,6 +45,8 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
         run: pip install -e ".[dev]"
 
       - name: Run harness
