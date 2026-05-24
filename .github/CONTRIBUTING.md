@@ -120,6 +120,8 @@ phoenix serve
 
 Phoenix UI: <http://localhost:6006>.
 
+Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for read-side MCP operations. Pin to `@arizeai/phoenix-mcp@4.0.13`. There is no Python wheel; install with `npm i -g @arizeai/phoenix-mcp@4.0.13` if you plan to exercise the MCP read path. Bumping the pin is a deliberate change that should land in its own PR.
+
 ### 5. Generate traces with the sample agent
 
 In a new terminal with the venv activated, run the Travel Planner demo a few times with all failure modes injected:
@@ -140,7 +142,7 @@ python -m sample_agent.agent --inject all
 
 Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation flips the mock tool outputs into their broken shapes, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
 
-Heads up: `sample_agent/agent.py`'s `build_itinerary` is currently a stand-in. It calls Python mock tools directly and does not yet make a real Gemini call, so `phoenix.otel.register(auto_instrument=True)` has nothing to wrap. The OTel exporter starts up but emits no spans, and Phoenix will not auto-create the `travel-planner-agent` project from these runs alone. Wiring a real LLM call into `build_itinerary` is tracked work; until then, `nengok run` against the project will 404. If you want to exercise the full Observe -> Diagnose -> Fix -> Verify loop today, either land that LLM call or seed the project with spans from another instrumented script.
+`build_itinerary` now invokes Gemini via `google-genai`, so `phoenix.otel.register(auto_instrument=True)` has a real LLM call to wrap and the `openinference-instrumentation-google-genai` package emits spans on every run. Each invocation creates or updates the `travel-planner-agent` project in Phoenix, and `nengok run` against that project should pull anomalous spans without 404ing.
 
 If the agent prints `WARNING: PHOENIX_BASE_URL is not set`, your `.env` is missing or you are running from the wrong directory.
 
