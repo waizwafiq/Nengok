@@ -1,0 +1,46 @@
+{
+  "name": "travel_planner_golden",
+  "description": "Curated golden cases for the Travel Planner demo agent. Used by the Verifier gate to ensure proposed fixes do not regress baseline quality.",
+  "version": 1,
+  "cases": [
+    {
+      "case_id": "golden-001",
+      "input": {
+        "query": "Plan a 2-day trip from KL to Singapore"
+      },
+      "expected": {
+        "contains": "Singapore",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "baseline-happy-path"
+      }
+    },
+    {
+      "case_id": "golden-002",
+      "input": {
+        "query": "Plan a 5-day trip from Tokyo to Bangkok with a mid-range hotel budget"
+      },
+      "expected": {
+        "contains": "Bangkok",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "baseline-with-budget-constraint"
+      }
+    },
+    {
+      "case_id": "golden-003",
+      "input": {
+        "query": "What is the weather like in Tokyo next week?"
+      },
+      "expected": {
+        "contains": "Tokyo",
+        "must_call_tools": ["weather"]
+      },
+      "metadata": {
+        "scenario": "single-tool-call"
+      }
+    }
+  ]
+}

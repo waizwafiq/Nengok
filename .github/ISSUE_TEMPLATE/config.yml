@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/waizwafiq/nengok/discussions
+    about: Ask a question or start a discussion. Bug reports and feature requests use the templates above.
+  - name: Arize Phoenix
+    url: https://docs.arize.com/phoenix
+    about: Issues with Phoenix itself (tracing, MCP server, SDK) belong upstream.

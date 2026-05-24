@@ -1,0 +1,84 @@
+name: Dashboard Deploy (Cloud Run)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "nengok/server/**"
+      - "frontend/**"
+      - "deploy/**"
+      - ".github/workflows/dashboard-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dashboard-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  GCP_REGION: asia-southeast1
+  SERVICE_NAME: nengok-dashboard
+
+jobs:
+  check:
+    name: Check if deploy is needed
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.gate.outputs.should_deploy }}
+    steps:
+      - name: Gate on commit message + secrets
+        id: gate
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if echo "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
+            echo "Skipping deploy — docs-only commit"
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$GCP_PROJECT_ID" ]; then
+            echo "GCP_PROJECT_ID secret not configured — skipping deploy"
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Build + deploy to Cloud Run
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: cloud-run
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Artifact Registry auth
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build dashboard image
+        run: |
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/nengok/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          docker build -f deploy/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image "$IMAGE" \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8765 \
+            --memory 1Gi \
+            --cpu 1 \
+            --max-instances 3

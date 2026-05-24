@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-brand-primary: #0d9488;
+  --color-brand-accent: #14b8a6;
+  --color-status-open: #f59e0b;
+  --color-status-diagnosed: #6366f1;
+  --color-status-fix: #16a34a;
+  --color-status-escalated: #dc2626;
+  --color-status-dismissed: #94a3b8;
+
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-neutral-50);
+    color: var(--color-neutral-900);
+    font-family: var(--font-sans);
+  }
+
+  code,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-neutral-300); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-400); }
+}
+
+@layer components {
+  .pane {
+    background: #ffffff;
+    border: 1px solid var(--color-neutral-200);
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+}

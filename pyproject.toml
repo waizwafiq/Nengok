@@ -1,0 +1,141 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nengok"
+dynamic = ["version"]
+description = "The autonomous quality agent for Arize Phoenix. Phoenix shows you what's wrong. Nengok fixes it."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "The Nengok Authors", email = "hello@nengok.dev" },
+]
+keywords = [
+    "ai",
+    "llm",
+    "agents",
+    "observability",
+    "evaluation",
+    "phoenix",
+    "arize",
+    "gemini",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "typer>=0.12.0",
+    "pydantic>=2.6.0",
+    "httpx>=0.27.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+phoenix = [
+    "arize-phoenix-client==1.16.0",
+    "arize-phoenix-evals>=0.20.0",
+    "arize-phoenix-otel>=0.16.0",
+    "openinference-instrumentation>=0.1.0",
+]
+server = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+clustering = [
+    "sentence-transformers>=3.0.0",
+    "hdbscan>=0.8.40",
+]
+gemini = [
+    "google-genai>=0.7.0",
+]
+dev = [
+    "ruff==0.6.9",
+    "mypy>=1.11.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "types-requests",
+]
+
+[project.scripts]
+nengok = "nengok.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/waizwafiq/nengok"
+Documentation = "https://github.com/waizwafiq/nengok#readme"
+Repository = "https://github.com/waizwafiq/nengok"
+Issues = "https://github.com/waizwafiq/nengok/issues"
+Changelog = "https://github.com/waizwafiq/nengok/releases"
+
+[tool.hatch.version]
+path = "nengok/__version__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nengok"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"nengok/state/schema.sql" = "nengok/state/schema.sql"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/nengok",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011", "SIM117"]
+"phoenix_harness/**" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_optional = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: integration tests that hit live Phoenix / Gemini APIs",
+]
+asyncio_mode = "auto"

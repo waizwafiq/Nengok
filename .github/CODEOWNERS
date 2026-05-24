@@ -1,0 +1,9 @@
+# Default owner — every PR notifies the maintainer.
+*       @waizwafiq
+
+# Path-specific owners (uncomment + adjust as the team grows).
+# /nengok/            @waizwafiq @sdk-lead
+# /frontend/          @waizwafiq @fe-lead
+# /sample_agent/      @waizwafiq
+# /phoenix_harness/   @waizwafiq @phoenix-integration
+# /.github/           @waizwafiq

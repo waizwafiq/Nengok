@@ -1,0 +1,120 @@
+name: SDK CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "nengok/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/sdk-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "nengok/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/sdk-ci.yml"
+
+jobs:
+  check:
+    name: Check if CI is needed
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.commit_check.outputs.should_run }}
+    steps:
+      - name: Check commit message
+        id: commit_check
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if echo "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
+            echo "Skipping CI — docs-only commit"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    name: Ruff check + format
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff==0.6.9
+
+      - name: Ruff check
+        run: ruff check nengok tests sample_agent
+
+      - name: Ruff format --check
+        run: ruff format --check nengok tests sample_agent
+
+  type-check:
+    name: mypy
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        run: pip install -e ".[dev]"
+
+      - name: mypy
+        run: mypy nengok
+
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        run: pip install -e ".[dev]"
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  import-check:
+    name: SDK imports cleanly
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Verify CLI is reachable
+        run: nengok --help
