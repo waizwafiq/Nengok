@@ -108,6 +108,20 @@ class PhoenixWrapper:
         outputs = [c.expected for c in cases]
         return client.datasets.create_dataset(name=name, inputs=inputs, outputs=outputs)
 
+    def get_dataset(self, *, name: str) -> Any | None:
+        """
+        Look up a Phoenix dataset by name.
+
+        Returns ``None`` when the dataset does not exist so callers can
+        idempotently create one without catching the SDK's lookup
+        exception themselves.
+        """
+        client = self._get_client()
+        try:
+            return client.datasets.get_dataset(dataset=name)
+        except ValueError:
+            return None
+
     def run_experiment(
         self,
         *,
