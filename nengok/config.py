@@ -42,8 +42,8 @@ class NengokConfig:
     """Resolved Nengok configuration for a single CLI invocation."""
 
     phoenix_base_url: str
-    phoenix_api_key: str | None
-    google_api_key: str | None
+    phoenix_api_key: str | None = None
+    google_api_key: str | None = None
 
     project_identifier: str = "default"
 
