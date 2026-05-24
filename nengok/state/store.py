@@ -13,10 +13,10 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Iterator
 
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
 from nengok.utils.logging import get_logger
@@ -52,7 +52,7 @@ class StateStore:
             return []
 
         new: list[AnomalousSpan] = []
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         with self._connect() as conn:
             for anomaly in anomalies:
@@ -98,7 +98,7 @@ class StateStore:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE clusters SET status = ?, updated_at = ? WHERE cluster_id = ?",
-                (status.value, datetime.now(timezone.utc).isoformat(), cluster_id),
+                (status.value, datetime.now(UTC).isoformat(), cluster_id),
             )
 
     def list_clusters(self, *, status: ClusterStatus | None = None) -> list[dict]:
@@ -115,7 +115,7 @@ class StateStore:
 
     def record_approval(self, *, cluster_id: str, decision: str, decided_by: str | None, notes: str | None) -> str:
         approval_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """

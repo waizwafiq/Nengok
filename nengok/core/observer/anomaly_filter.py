@@ -41,12 +41,12 @@ class AnomalyFilter:
         if span.latency_ms is not None and span.latency_ms > self.latency_threshold_ms:
             yield AnomalySignal.HIGH_LATENCY
 
-        for label, value in span.annotations.items():
-            if isinstance(value, dict) and isinstance(value.get("score"), (int, float)):
+        for _label, value in span.annotations.items():
+            if isinstance(value, dict) and isinstance(value.get("score"), int | float):
                 if value["score"] < self.low_eval_score:
                     yield AnomalySignal.LOW_EVAL_SCORE
                     break
-            elif isinstance(value, (int, float)) and value < self.low_eval_score:
+            elif isinstance(value, int | float) and value < self.low_eval_score:
                 yield AnomalySignal.LOW_EVAL_SCORE
                 break
 

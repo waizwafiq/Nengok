@@ -20,9 +20,7 @@ def output_is_present(output: Any, expected: Any) -> bool:
     del expected
     if output is None:
         return False
-    if isinstance(output, str) and not output.strip():
-        return False
-    return True
+    return not (isinstance(output, str) and not output.strip())
 
 
 def output_is_valid_json(output: Any, expected: Any) -> bool:

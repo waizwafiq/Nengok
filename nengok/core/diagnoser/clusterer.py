@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from nengok.config import NengokConfig
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
@@ -30,7 +30,7 @@ class Clusterer:
 
         groups = self._call_gemini_clusterer(anomalies)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         clusters: list[Cluster] = []
         for group in groups:
             members = [a.span.span_id for a in group.members]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from nengok.core.types import AnomalousSpan, AnomalySignal, Cluster, ClusterStatus, TraceSpan
@@ -31,7 +31,7 @@ def test_deduplicate_filters_seen_spans(tmp_path: Path) -> None:
 
 def test_cluster_upsert_round_trip(tmp_path: Path) -> None:
     store = StateStore(tmp_path / "state.db")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cluster = Cluster(
         cluster_id="c-1",
         name="flights-schema-drift",

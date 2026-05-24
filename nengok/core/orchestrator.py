@@ -10,7 +10,7 @@ swapping any stage for a fake.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from nengok.config import NengokConfig
 from nengok.core.diagnoser.clusterer import Clusterer
@@ -58,7 +58,7 @@ class Orchestrator:
 
     def run_once(self, *, dry_run: bool = False) -> CycleResult:
         """One full Observer -> Diagnoser -> Fixer -> Verifier pass."""
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         logger.info("Cycle start (project=%s, dry_run=%s)", self.config.project_identifier, dry_run)
 
         spans = self._sampler.sample()
@@ -117,7 +117,7 @@ class Orchestrator:
                     verification.outcome.value,
                 )
 
-        finished_at = datetime.now(timezone.utc)
+        finished_at = datetime.now(UTC)
         logger.info("Cycle complete in %.1fs", (finished_at - started_at).total_seconds())
 
         return CycleResult(

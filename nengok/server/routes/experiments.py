@@ -9,16 +9,15 @@ proxy.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from nengok.config import NengokConfig
-from nengok.server.dependencies import get_config
+from nengok.server.dependencies import ConfigDep
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
 
 
 @router.get("/{cluster_id}/latest")
-def latest_experiment(cluster_id: str, config: NengokConfig = Depends(get_config)) -> dict:
+def latest_experiment(cluster_id: str, config: ConfigDep) -> dict:
     del config
     return {
         "cluster_id": cluster_id,

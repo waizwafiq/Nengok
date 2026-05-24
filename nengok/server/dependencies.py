@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
@@ -14,5 +14,11 @@ def get_config(request: Request) -> NengokConfig:
     return cast(NengokConfig, request.app.state.config)
 
 
-def get_store(config: NengokConfig = Depends(get_config)) -> StateStore:
+ConfigDep = Annotated[NengokConfig, Depends(get_config)]
+
+
+def get_store(config: ConfigDep) -> StateStore:
     return StateStore(config.state_db_path)
+
+
+StoreDep = Annotated[StateStore, Depends(get_store)]

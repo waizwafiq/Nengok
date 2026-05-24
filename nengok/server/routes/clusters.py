@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from nengok.core.types import ClusterStatus
-from nengok.server.dependencies import get_store
-from nengok.state.store import StateStore
+from nengok.server.dependencies import StoreDep
 
 router = APIRouter(prefix="/clusters", tags=["clusters"])
 
 
 @router.get("")
 def list_clusters(
-    status: ClusterStatus | None = Query(default=None),
-    store: StateStore = Depends(get_store),
+    store: StoreDep,
+    status: Annotated[ClusterStatus | None, Query()] = None,
 ) -> list[dict]:
     return store.list_clusters(status=status)
 
 
 @router.get("/{cluster_id}")
-def get_cluster(cluster_id: str, store: StateStore = Depends(get_store)) -> dict:
+def get_cluster(cluster_id: str, store: StoreDep) -> dict:
     clusters = store.list_clusters()
     match = next((c for c in clusters if c["cluster_id"] == cluster_id), None)
     if match is None:
