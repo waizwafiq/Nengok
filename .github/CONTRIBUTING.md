@@ -92,25 +92,31 @@ Phoenix UI: <http://localhost:6006>.
 ### 5. Run the sample agent to generate traces
 
 ```bash
-python -m sample_agent.agent
+python -m sample_agent.agent --inject all
 ```
 
-This boots the Travel Planner demo and emits OpenInference traces to your Phoenix instance.
+The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout). Without it the agent runs cleanly and Nengok finds nothing to cluster. Run it three or four times to give the clusterer enough signal.
+
+The sample agent registers traces under Phoenix project `travel-planner-agent`. Step 6 has to point Nengok at that same project, otherwise `nengok run` reads from an empty project and exits with zero spans.
 
 ### 6. Run a Nengok cycle
 
 ```bash
-nengok init --phoenix-url http://localhost:6006
+nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
 nengok run
 ```
+
+The `--project` flag has to match the project the sample agent writes to. If you skip it, `init` defaults to `default` and `nengok run` reports `0 spans -> 0 anomalies -> 0 new after dedup`.
 
 ### 7. Launch the dashboard (optional)
 
 ```bash
-nengok dashboard
+nengok dashboard --no-browser
 # FastAPI server at http://localhost:8765
 # Vite dev server (if running) proxies to it at http://localhost:5173
 ```
+
+The FastAPI server only mounts the React bundle at `/` when a pre-built copy exists in `frontend/dist/`. If you haven't built the frontend, hitting <http://localhost:8765> returns 404, so `--no-browser` keeps the CLI from auto-opening that tab.
 
 For frontend development:
 
@@ -119,6 +125,10 @@ cd frontend
 npm install
 npm run dev
 ```
+
+Then visit <http://localhost:5173>. Vite proxies `/api` calls back to the FastAPI server, so keep `nengok dashboard --no-browser` running in another terminal.
+
+For single-port serving (no Node at runtime), build the bundle once with `npm run build`. After that, `nengok dashboard` serves the app at <http://localhost:8765> directly and the `--no-browser` flag is no longer needed.
 
 ## Branch Naming
 
