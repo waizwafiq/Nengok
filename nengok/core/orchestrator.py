@@ -78,7 +78,9 @@ class Orchestrator:
         clusters: list[Cluster] = []
         for raw in raw_clusters:
             hypothesis = self._hypothesizer.hypothesize(raw)
-            clusters.append(raw.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED}))
+            clusters.append(
+                raw.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
+            )
             self._state.upsert_cluster(clusters[-1])
 
         logger.info("Diagnoser: %d clusters with hypotheses", len(clusters))

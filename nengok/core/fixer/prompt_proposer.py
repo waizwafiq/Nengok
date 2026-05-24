@@ -37,7 +37,8 @@ class PromptProposer:
     def _call_gemini_proposer(self, *, cluster: Cluster, baseline: str) -> _ProposalDraft:
         logger.debug("Proposer placeholder for cluster=%s", cluster.cluster_id)
         return _ProposalDraft(
-            proposed_prompt=baseline + "\n\n# Guardrail (auto-proposed by Nengok)\n# (no rewrite generated yet)",
+            proposed_prompt=baseline
+            + "\n\n# Guardrail (auto-proposed by Nengok)\n# (no rewrite generated yet)",
             rationale=f"Pending fix proposal for cluster '{cluster.name}'.",
         )
 

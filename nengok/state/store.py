@@ -113,7 +113,9 @@ class StateStore:
             rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
-    def record_approval(self, *, cluster_id: str, decision: str, decided_by: str | None, notes: str | None) -> str:
+    def record_approval(
+        self, *, cluster_id: str, decision: str, decided_by: str | None, notes: str | None
+    ) -> str:
         approval_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:

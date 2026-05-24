@@ -53,7 +53,9 @@ def init(
     phoenix_url: Annotated[str, typer.Option("--phoenix-url", help="Base URL of your Phoenix instance.")],
     api_key: Annotated[
         str | None,
-        typer.Option("--api-key", help="Phoenix API key. If omitted, falls back to PHOENIX_API_KEY at runtime."),
+        typer.Option(
+            "--api-key", help="Phoenix API key. If omitted, falls back to PHOENIX_API_KEY at runtime."
+        ),
     ] = None,
     project: Annotated[
         str,
