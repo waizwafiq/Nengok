@@ -47,7 +47,7 @@ class Orchestrator:
         self._sampler = SpanSampler(self._phoenix, self.config)
         self._anomaly_filter = AnomalyFilter()
         self._clusterer = Clusterer(self.config)
-        self._hypothesizer = Hypothesizer(self.config)
+        self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix)
 
         self._test_generator = TestGenerator(self.config)
         self._prompt_proposer = PromptProposer(self.config)
