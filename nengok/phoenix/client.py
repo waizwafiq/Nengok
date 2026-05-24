@@ -13,15 +13,17 @@ the SDK calls in one module:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from nengok.config import NengokConfig
+from nengok.core.evaluators.aggregate import summarize_experiment
 from nengok.core.evaluators.code_evals import CodeEvaluator
 from nengok.core.evaluators.llm_judges import JudgeSpec, _ensure_phoenix_judge
 from nengok.core.types import RegressionTestCase, TraceSpan
 from nengok.phoenix.spans import normalize_span
+from nengok.runners.agent_runner import AgentRunner, get_runner
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -154,16 +156,43 @@ class PhoenixWrapper:
         dry_run: int,
     ) -> _ExperimentRun:
         """
-        Execute one experiment via `px_client.experiments.run_experiment`.
+        Execute one Phoenix experiment and return the aggregated pass rate.
 
-        The body is intentionally a placeholder: the implementation will
-        translate `JudgeSpec` into `phoenix.evals.ClassificationEvaluator`
-        instances, build the task function from `prompt`, and feed the
-        whole stack into `run_experiment(..., dry_run=dry_run)`.
+        The task callable runs the monitored agent against each dataset
+        row with ``prompt`` injected, so a fix candidate can be A/B'd
+        against the baseline without touching the agent's bundled prompt.
         """
-        del dataset_ref, prompt, evaluators, dry_run
-        logger.warning("Phoenix experiment placeholder used for '%s'", experiment_name)
-        return _ExperimentRun(experiment_id=None, pass_rate=0.0, per_case=[])
+        runner = get_runner(self._config.project_identifier)
+        if runner is None:
+            raise RuntimeError(
+                f"No agent runner registered for project "
+                f"'{self._config.project_identifier}'. Call "
+                "`nengok.runners.register_runner` before running an experiment."
+            )
+
+        client = self._get_client()
+        resolved, code_names = _resolve_evaluators_with_names(evaluators)
+        task = _build_task(prompt=prompt, runner=runner)
+
+        ran = client.experiments.run_experiment(
+            dataset=dataset_ref,
+            task=task,
+            evaluators=resolved,
+            experiment_name=experiment_name,
+            dry_run=dry_run,
+            print_summary=False,
+        )
+
+        summary = summarize_experiment(
+            task_runs=ran.get("task_runs") or [],
+            evaluation_runs=ran.get("evaluation_runs") or [],
+            code_evaluator_names=code_names,
+        )
+        return _ExperimentRun(
+            experiment_id=ran.get("experiment_id"),
+            pass_rate=summary.pass_rate,
+            per_case=summary.per_case,
+        )
 
     def run_golden_comparison(
         self,
@@ -186,10 +215,35 @@ class PhoenixWrapper:
 
 def _resolve_evaluators(evaluators: list[CodeEvaluator | JudgeSpec]) -> list[Any]:
     """Turn the Nengok evaluator union into the heterogeneous list Phoenix wants."""
+    resolved, _ = _resolve_evaluators_with_names(evaluators)
+    return resolved
+
+
+def _resolve_evaluators_with_names(
+    evaluators: list[CodeEvaluator | JudgeSpec],
+) -> tuple[list[Any], set[str]]:
+    """Same as ``_resolve_evaluators`` but also returns the code evaluator names.
+
+    Phoenix scores evaluators by name, so the aggregator needs to know
+    which names are code (strict-AND) versus which are judge (averaged).
+    """
     resolved: list[Any] = []
+    code_names: set[str] = set()
     for evaluator in evaluators:
         if isinstance(evaluator, JudgeSpec):
             resolved.append(_ensure_phoenix_judge(evaluator))
         else:
             resolved.append(evaluator)
-    return resolved
+            code_names.add(getattr(evaluator, "__name__", repr(evaluator)))
+    return resolved, code_names
+
+
+def _build_task(*, prompt: str, runner: AgentRunner) -> Callable[..., dict[str, Any]]:
+    """Wrap an AgentRunner in the signature Phoenix's run_experiment calls."""
+
+    def task(example: Mapping[str, Any]) -> dict[str, Any]:
+        raw_input = example.get("input") or {}
+        input_row = dict(raw_input) if isinstance(raw_input, Mapping) else {"value": raw_input}
+        return runner(input_row, prompt)
+
+    return task
