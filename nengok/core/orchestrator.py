@@ -50,7 +50,7 @@ class Orchestrator:
         self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix)
 
         self._test_generator = TestGenerator(self.config)
-        self._prompt_proposer = PromptProposer(self.config)
+        self._prompt_proposer = PromptProposer(self.config, phoenix=self._phoenix)
         self._experiment_runner = ExperimentRunner(self._phoenix, self.config)
 
         self._gate = VerifierGate(self.config)
