@@ -59,11 +59,24 @@ def default_judges(config: NengokConfig) -> list[JudgeSpec]:
     ]
 
 
-def _ensure_phoenix_judge(_spec: JudgeSpec) -> Any:
+def _ensure_phoenix_judge(spec: JudgeSpec) -> Any:
     """
     Convert a JudgeSpec into a `phoenix.evals.ClassificationEvaluator`.
 
     Wrapped in a private helper so the rest of Nengok stays decoupled
-    from the Phoenix evals package until the SDK is actually used.
+    from `arize-phoenix-evals` until the SDK is actually used; tests
+    that touch `JudgeSpec` do not need the optional extra installed.
     """
-    raise NotImplementedError("Phoenix judge construction is wired up in nengok.phoenix.client")
+    try:
+        from phoenix.evals import LLM, ClassificationEvaluator
+    except ImportError as exc:  # pragma: no cover - import guard
+        raise RuntimeError(
+            "arize-phoenix-evals is not installed. " "Install it via `pip install nengok[phoenix]`."
+        ) from exc
+
+    return ClassificationEvaluator(
+        name=spec.name,
+        prompt_template=spec.prompt_template,
+        choices=spec.choices,
+        llm=LLM(provider="google", model=spec.model),
+    )
