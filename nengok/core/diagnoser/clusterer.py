@@ -8,6 +8,7 @@ coarse first pass is documented as a stretch goal in the proposal.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +18,26 @@ from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+MAX_CLUSTER_NAME_LENGTH = 40
+_NAME_INVALID_CHARS = re.compile(r"[^a-z0-9-]+")
+_NAME_DASH_RUN = re.compile(r"-+")
+
+
+def _normalize_name(raw: str) -> str:
+    """
+    Coerce a Gemini-suggested cluster name into a stable lookup key.
+
+    Output is lowercase kebab, max 40 characters, no whitespace and no
+    runs of more than one dash. Falls back to ``unnamed-cluster`` when
+    the input collapses to an empty string.
+    """
+    lowered = raw.strip().lower()
+    kebabbed = _NAME_INVALID_CHARS.sub("-", lowered)
+    collapsed = _NAME_DASH_RUN.sub("-", kebabbed).strip("-")
+    if not collapsed:
+        return "unnamed-cluster"
+    return collapsed[:MAX_CLUSTER_NAME_LENGTH].rstrip("-")
 
 
 @dataclass
@@ -38,7 +59,7 @@ class Clusterer:
             clusters.append(
                 Cluster(
                     cluster_id=str(uuid.uuid4()),
-                    name=group.name,
+                    name=_normalize_name(group.name),
                     description=group.description,
                     status=ClusterStatus.OPEN,
                     member_span_ids=members,
