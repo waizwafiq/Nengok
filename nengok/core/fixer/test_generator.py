@@ -57,7 +57,14 @@ class TestGenerator:
 
     def _materialize(self, case: _GeminiCase, cluster: Cluster) -> RegressionTestCase:
         metadata = dict(case.metadata)
-        metadata["cluster_id"] = cluster.cluster_id
+        metadata.update(
+            {
+                "cluster_id": cluster.cluster_id,
+                "cluster_name": cluster.name,
+                "failure_signal": cluster.name,
+                "generator_model": self.config.diagnoser_model,
+            }
+        )
         return RegressionTestCase(
             case_id=str(uuid.uuid4()),
             input=case.input,
