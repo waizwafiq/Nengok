@@ -13,8 +13,10 @@ the SDK calls in one module:
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from nengok.config import NengokConfig
@@ -27,6 +29,8 @@ from nengok.runners.agent_runner import AgentRunner, get_runner
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+SAMPLE_GOLDEN_PATH = Path(__file__).resolve().parents[2] / "golden_dataset" / "travel_planner_golden.json"
 
 
 @dataclass
@@ -42,6 +46,8 @@ class PhoenixWrapper:
     def __init__(self, config: NengokConfig) -> None:
         self._config = config
         self._client: Any | None = None
+        self._golden_cache: dict[str, Any] | None = None
+        self._golden_dataset_ref: Any | None = None
 
     def _get_client(self) -> Any:
         if self._client is not None:
@@ -205,12 +211,64 @@ class PhoenixWrapper:
         Run both prompt versions against the curated golden dataset.
 
         The Verifier uses the result delta to enforce the
-        `golden_regression_limit` ceiling.
+        ``golden_regression_limit`` ceiling. The golden JSON is loaded
+        once per wrapper instance and the Phoenix dataset is created
+        idempotently so repeated cycles do not stack duplicate copies.
         """
-        del baseline_prompt, proposed_prompt, evaluators
-        logger.warning("Phoenix golden-set placeholder used")
-        empty = _ExperimentRun(experiment_id=None, pass_rate=1.0, per_case=[])
-        return empty, empty
+        golden = self._load_golden_dataset()
+        dataset_ref = self._ensure_golden_dataset(golden)
+        version = golden.get("version", 1)
+
+        baseline_run = self.run_experiment(
+            dataset_ref=dataset_ref,
+            prompt=baseline_prompt,
+            evaluators=evaluators,
+            experiment_name=f"golden-baseline-v{version}",
+            dry_run=0,
+        )
+        fix_run = self.run_experiment(
+            dataset_ref=dataset_ref,
+            prompt=proposed_prompt,
+            evaluators=evaluators,
+            experiment_name=f"golden-fix-v{version}",
+            dry_run=0,
+        )
+        return baseline_run, fix_run
+
+    def _load_golden_dataset(self) -> dict[str, Any]:
+        if self._golden_cache is not None:
+            return self._golden_cache
+        if not SAMPLE_GOLDEN_PATH.exists():
+            raise RuntimeError(
+                f"Golden dataset not found at {SAMPLE_GOLDEN_PATH}. "
+                "Bundle a golden_dataset/ directory with the SDK or override "
+                "the path before calling run_golden_comparison."
+            )
+        parsed = json.loads(SAMPLE_GOLDEN_PATH.read_text(encoding="utf-8"))
+        self._golden_cache = parsed
+        return parsed
+
+    def _ensure_golden_dataset(self, golden: dict[str, Any]) -> Any:
+        if self._golden_dataset_ref is not None:
+            return self._golden_dataset_ref
+        version = golden.get("version", 1)
+        dataset_name = f"travel-planner-golden-v{version}"
+        existing = self.get_dataset(name=dataset_name)
+        if existing is not None:
+            self._golden_dataset_ref = existing
+            return existing
+        cases = [
+            RegressionTestCase(
+                case_id=case["case_id"],
+                input=case["input"],
+                expected=case["expected"],
+                metadata=case.get("metadata", {}),
+            )
+            for case in golden["cases"]
+        ]
+        created = self.create_dataset(name=dataset_name, cases=cases)
+        self._golden_dataset_ref = created
+        return created
 
 
 def _resolve_evaluators(evaluators: list[CodeEvaluator | JudgeSpec]) -> list[Any]:
