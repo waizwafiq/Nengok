@@ -13,23 +13,55 @@ This is a monorepo: the SDK, the dashboard frontend, the demo agent, and the Pho
 - A reachable Arize Phoenix instance (Phoenix Cloud, self-hosted, or `phoenix serve` locally)
 - A Google AI Studio API key for Gemini
 
-### 1. Clone and install the SDK in editable mode
+### 1. Clone the repo
 
 ```bash
-git clone https://github.com/waizwafiq/Nengok.git .
+git clone https://github.com/waizwafiq/Nengok.git nengok-codebase
+cd nengok-codebase
+```
 
-# at repo root; pyproject.toml lives here
+Run every command from this directory (the repo root). `pyproject.toml` lives here; the `nengok/` subdirectory is the Python package and does not contain a manifest. If you `cd` one level too deep, `pip install` prints `does not appear to be a Python project`.
+
+### 2. Install the SDK in editable mode
+
+Two ways to do this. The `uv` path is roughly 10x faster on a cold install and does not require a system Python 3.11+.
+
+#### Fast path: `uv`
+
+[`uv`](https://docs.astral.sh/uv/) is a drop-in replacement for `pip` + `venv` that ships managed Python builds and a shared wheel cache.
+
+```bash
+# One-time: install uv (skip if already on PATH)
+pip install --user uv
+
+# Download a managed CPython 3.12 (no admin, no PATH changes)
+python -m uv python install 3.12
+
+# Create the venv and install everything
+python -m uv venv --python 3.12
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python -m uv pip install -e ".[dev]"
+```
+
+Cold install: under 10 seconds.
+
+If `uv` is not on your PATH after `pip install --user uv`, keep invoking it as `python -m uv ...` or run `python -m uv python update-shell` once.
+
+#### Stock path: `pip`
+
+Needs Python 3.11+ already installed and on your PATH.
+
+```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
 pip install -e ".[dev]"
 ```
 
-Run `pip install` from the repo root, not from the `nengok-codebase/nengok/` package directory. The Python package only contains source files. If you `cd` one level too deep, pip prints `does not appear to be a Python project` because `pyproject.toml` is one level up.
+Cold install: 2 to 5 minutes on Windows because `uvicorn[standard]` pulls in a few Rust-built dependencies.
 
 You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`).
 
-### 2. Configure environment
+### 3. Configure environment
 
 Copy `.env.example` to `.env` and fill in:
 
@@ -44,7 +76,7 @@ GOOGLE_API_KEY=...
 NENGOK_ARTIFACTS_DIR=./artifacts
 ```
 
-### 3. Start a local Phoenix (optional, for end-to-end work)
+### 4. Start a local Phoenix (optional, for end-to-end work)
 
 ```bash
 pip install arize-phoenix
@@ -53,7 +85,7 @@ phoenix serve
 
 Phoenix UI: <http://localhost:6006>.
 
-### 4. Run the sample agent to generate traces
+### 5. Run the sample agent to generate traces
 
 ```bash
 python -m sample_agent.agent
@@ -61,14 +93,14 @@ python -m sample_agent.agent
 
 This boots the Travel Planner demo and emits OpenInference traces to your Phoenix instance.
 
-### 5. Run a Nengok cycle
+### 6. Run a Nengok cycle
 
 ```bash
 nengok init --phoenix-url http://localhost:6006
 nengok run
 ```
 
-### 6. Launch the dashboard (optional)
+### 7. Launch the dashboard (optional)
 
 ```bash
 nengok dashboard
