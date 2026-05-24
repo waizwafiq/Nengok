@@ -16,16 +16,18 @@ This is a monorepo: the SDK, the dashboard frontend, the demo agent, and the Pho
 ### 1. Clone and install the SDK in editable mode
 
 ```bash
-git clone https://github.com/waizwafiq/nengok.git
-cd nengok
+git clone https://github.com/waizwafiq/Nengok.git .
 
+# at repo root; pyproject.toml lives here
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 pip install -e ".[dev]"
 ```
 
-This installs Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`).
+Run `pip install` from the repo root, not from the `nengok-codebase/nengok/` package directory. The Python package only contains source files. If you `cd` one level too deep, pip prints `does not appear to be a Python project` because `pyproject.toml` is one level up.
+
+You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`).
 
 ### 2. Configure environment
 
