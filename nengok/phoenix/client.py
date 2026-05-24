@@ -13,6 +13,7 @@ the SDK calls in one module:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,6 +62,27 @@ class PhoenixWrapper:
         client = self._get_client()
         raw = client.spans.get_spans(project_identifier=project_identifier, limit=limit)
         return [normalize_span(item) for item in raw]
+
+    def get_spans_by_ids(
+        self,
+        *,
+        project_identifier: str,
+        span_ids: Sequence[str],
+        limit: int = 1000,
+    ) -> list[TraceSpan]:
+        """
+        Return only the spans in `span_ids` from the given project.
+
+        The Phoenix client's ``get_spans`` does not support a span-id filter
+        (only trace-id), so this helper pulls a bounded batch from the
+        project and filters client-side. Caller picks ``limit`` to bound
+        the worst case.
+        """
+        if not span_ids:
+            return []
+        wanted = set(span_ids)
+        batch = self.get_spans(project_identifier=project_identifier, limit=limit)
+        return [s for s in batch if s.span_id in wanted]
 
     def create_dataset(self, *, name: str, cases: list[RegressionTestCase]) -> Any:
         client = self._get_client()
