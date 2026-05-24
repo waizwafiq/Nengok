@@ -22,8 +22,7 @@ If you plan to use the `uv` install path, you do not need Python 3.11+ on the sy
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/waizwafiq/Nengok.git nengok-codebase
-cd nengok-codebase
+git clone https://github.com/waizwafiq/Nengok.git .
 ```
 
 `pyproject.toml` lives at the repo root. The `nengok/` subdirectory is the Python package and does not contain a manifest, so `cd nengok` before installing prints `does not appear to be a Python project`.
