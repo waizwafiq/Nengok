@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from sample_agent.tools import failure_modes, flights, hotels, weather
 
@@ -40,6 +43,8 @@ def build_itinerary(query: str) -> dict:
 
 
 def main() -> None:
+    load_dotenv(override=False)
+
     parser = argparse.ArgumentParser(description="Travel Planner demo agent.")
     parser.add_argument("--query", default="Plan a 3-day trip from KL to Tokyo")
     parser.add_argument(
@@ -54,6 +59,12 @@ def main() -> None:
 
     if os.environ.get("PHOENIX_BASE_URL"):
         _maybe_register_phoenix_tracing()
+    else:
+        print(
+            "WARNING: PHOENIX_BASE_URL is not set. This run will not emit traces to Phoenix. "
+            "Copy .env.example to .env (or export PHOENIX_BASE_URL in your shell) and rerun.",
+            file=sys.stderr,
+        )
 
     result = build_itinerary(args.query)
     print(result)

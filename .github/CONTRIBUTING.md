@@ -6,12 +6,18 @@ This is a monorepo: the SDK, the dashboard frontend, the demo agent, and the Pho
 
 ## Getting Set Up
 
+The short version: clone, install in a venv, copy `.env.example` to `.env`, start Phoenix, generate traces with the sample agent, run `nengok`. Every step below has the Windows command first, then macOS/Linux. Run everything from the repo root unless a step says otherwise.
+
 ### Prerequisites
 
-- Python 3.11+ (`python --version`)
-- Node 22+ (only if you touch the dashboard frontend)
-- A reachable Arize Phoenix instance (Phoenix Cloud, self-hosted, or `phoenix serve` locally)
-- A Google AI Studio API key for Gemini
+| Tool | Why | Where |
+|---|---|---|
+| Python 3.11+ | The SDK and demo agent | [python.org](https://www.python.org/downloads/) (Windows), Homebrew (macOS), distro package manager (Linux) |
+| Node 22+ | Only if you touch `frontend/` | [nodejs.org](https://nodejs.org/) or `nvm` |
+| Google AI Studio key | Gemini reasoning + judge | <https://aistudio.google.com/> |
+| A Phoenix instance | Trace storage | Phoenix Cloud, self-hosted, or `phoenix serve` locally (covered in step 4) |
+
+If you plan to use the `uv` install path, you do not need Python 3.11+ on the system; `uv` will download a managed CPython for you.
 
 ### 1. Clone the repo
 
@@ -20,67 +26,91 @@ git clone https://github.com/waizwafiq/Nengok.git nengok-codebase
 cd nengok-codebase
 ```
 
-Run every command from this directory (the repo root). `pyproject.toml` lives here; the `nengok/` subdirectory is the Python package and does not contain a manifest. If you `cd` one level too deep, `pip install` prints `does not appear to be a Python project`.
+`pyproject.toml` lives at the repo root. The `nengok/` subdirectory is the Python package and does not contain a manifest, so `cd nengok` before installing prints `does not appear to be a Python project`.
 
 ### 2. Install the SDK in editable mode
 
-Two ways to do this. The `uv` path is roughly 10x faster on a cold install and does not require a system Python 3.11+.
+Pick `uv` (faster, bundles Python) or stock `pip` (already on most systems).
 
-#### Fast path: `uv`
+#### Option A: `uv` (recommended)
 
-[`uv`](https://docs.astral.sh/uv/) is a drop-in replacement for `pip` + `venv` that ships managed Python builds and a shared wheel cache.
+[`uv`](https://docs.astral.sh/uv/) is a drop-in replacement for `pip` + `venv` that ships managed Python builds and a shared wheel cache. Cold install: under 10 seconds.
 
-```bash
-# One-time: install uv (skip if already on PATH)
+**Windows (PowerShell or cmd):**
+
+```bat
 pip install --user uv
-
-# Download a managed CPython 3.12 (no admin, no PATH changes)
 python -m uv python install 3.12
-
-# Create the venv (`--seed` adds a `pip` binary inside it; see note below)
 python -m uv venv --seed --python 3.12
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# Install Nengok in editable mode with dev tools and Phoenix client
+.venv\Scripts\activate
 python -m uv pip install -e ".[dev,phoenix]"
 ```
 
-Cold install: under 10 seconds.
+**macOS / Linux:**
+
+```bash
+pip install --user uv
+python -m uv python install 3.12
+python -m uv venv --seed --python 3.12
+source .venv/bin/activate
+python -m uv pip install -e ".[dev,phoenix]"
+```
 
 If `uv` is not on your PATH after `pip install --user uv`, keep invoking it as `python -m uv ...` or run `python -m uv python update-shell` once.
 
-**Why `--seed`?** A bare `uv venv` does not install `pip` inside the venv. After activation, running plain `pip install <pkg>` then falls back to your *system* Python's pip and installs the package outside the venv, where Nengok cannot see it. `--seed` puts a real `pip` inside `.venv/Scripts/`, so both `pip install` and `python -m uv pip install` write to the right place.
+**Why `--seed`?** A bare `uv venv` does not install `pip` inside the venv. After activation, running plain `pip install <pkg>` then falls back to your *system* Python's pip and installs the package outside the venv, where Nengok cannot see it. `--seed` puts a real `pip` inside the venv so both `pip install` and `python -m uv pip install` write to the right place.
 
-#### Stock path: `pip`
+#### Option B: stock `pip`
 
-Needs Python 3.11+ already installed and on your PATH.
+Needs Python 3.11+ already installed and on your PATH. Cold install: 2 to 5 minutes on Windows because `uvicorn[standard]` pulls in a few Rust-built dependencies.
 
-```bash
+**Windows (PowerShell or cmd):**
+
+```bat
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+.venv\Scripts\activate
 pip install -e ".[dev,phoenix]"
 ```
 
-Cold install: 2 to 5 minutes on Windows because `uvicorn[standard]` pulls in a few Rust-built dependencies.
+**macOS / Linux:**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,phoenix]"
+```
 
 You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`) and the Phoenix client. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it.
 
-### 3. Configure environment
+### 3. Create your `.env`
 
-Copy `.env.example` to `.env` and fill in:
+**Windows (cmd):**
+
+```bat
+copy .env.example .env
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS / Linux:**
 
 ```bash
 cp .env.example .env
 ```
 
-```
-PHOENIX_BASE_URL=http://localhost:6006
-PHOENIX_API_KEY=...
-GOOGLE_API_KEY=...
-NENGOK_ARTIFACTS_DIR=./artifacts
-```
+Open `.env` and fill in `GOOGLE_API_KEY` (and `PHOENIX_API_KEY` if your Phoenix needs auth). The defaults for `PHOENIX_BASE_URL=http://localhost:6006` and `NENGOK_PROJECT=travel-planner-agent` match every other step in this guide, so leave them alone unless your setup differs.
+
+Nengok and the sample agent both auto-load `.env` from the current directory at startup (via `python-dotenv`), so you do not need to `export` anything in your shell. Run every command from the repo root and the env vars come along for free.
 
 ### 4. Start a local Phoenix (optional, for end-to-end work)
+
+If you already have Phoenix Cloud or a remote Phoenix, point `PHOENIX_BASE_URL` and `PHOENIX_API_KEY` at it in `.env` and skip this step.
+
+**All platforms** (run in a separate terminal so it stays up):
 
 ```bash
 pip install arize-phoenix
@@ -89,24 +119,38 @@ phoenix serve
 
 Phoenix UI: <http://localhost:6006>.
 
-### 5. Run the sample agent to generate traces
+### 5. Generate traces with the sample agent
 
-```bash
+In a new terminal with the venv activated, run the Travel Planner demo a few times with all failure modes injected:
+
+**Windows:**
+
+```bat
+.venv\Scripts\activate
 python -m sample_agent.agent --inject all
 ```
 
-The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout). Without it the agent runs cleanly and Nengok finds nothing to cluster. Run it three or four times to give the clusterer enough signal.
+**macOS / Linux:**
 
-The sample agent registers traces under Phoenix project `travel-planner-agent`. Step 6 has to point Nengok at that same project, otherwise `nengok run` reads from an empty project and exits with zero spans.
+```bash
+source .venv/bin/activate
+python -m sample_agent.agent --inject all
+```
+
+Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation produces one trace, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
+
+Refresh <http://localhost:6006> and you should see a `travel-planner-agent` project in Phoenix's sidebar with traces under it. If the agent prints `WARNING: PHOENIX_BASE_URL is not set`, your `.env` is missing or you are running from the wrong directory.
 
 ### 6. Run a Nengok cycle
 
 ```bash
-nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
+nengok init
 nengok run
 ```
 
-The `--project` flag has to match the project the sample agent writes to. If you skip it, `init` defaults to `default` and `nengok run` reports `0 spans -> 0 anomalies -> 0 new after dedup`.
+`nengok init` writes config to `~/.nengok/config.toml`. It reads `PHOENIX_BASE_URL`, `PHOENIX_API_KEY`, and `NENGOK_PROJECT` from your `.env`, so no flags are needed when the defaults work. If you want to override anything, the flags still exist: `nengok init --phoenix-url <url> --project <name>`.
+
+If `nengok run` reports `404 Not Found` on the spans endpoint, the Phoenix project does not exist yet. Go back to step 5 and confirm the sample agent is actually emitting traces (check the Phoenix UI).
 
 ### 7. Launch the dashboard (optional)
 
@@ -118,7 +162,17 @@ nengok dashboard --no-browser
 
 The FastAPI server only mounts the React bundle at `/` when a pre-built copy exists in `frontend/dist/`. If you haven't built the frontend, hitting <http://localhost:8765> returns 404, so `--no-browser` keeps the CLI from auto-opening that tab.
 
-For frontend development:
+For frontend development, in a separate terminal:
+
+**Windows:**
+
+```bat
+cd frontend
+npm install
+npm run dev
+```
+
+**macOS / Linux:**
 
 ```bash
 cd frontend
@@ -128,7 +182,7 @@ npm run dev
 
 Then visit <http://localhost:5173>. Vite proxies `/api` calls back to the FastAPI server, so keep `nengok dashboard --no-browser` running in another terminal.
 
-For single-port serving (no Node at runtime), build the bundle once with `npm run build`. After that, `nengok dashboard` serves the app at <http://localhost:8765> directly and the `--no-browser` flag is no longer needed.
+For single-port serving (no Node at runtime), build the bundle once with `npm run build` from `frontend/`. After that, `nengok dashboard` serves the app at <http://localhost:8765> directly and the `--no-browser` flag is no longer needed.
 
 ## Branch Naming
 
@@ -146,6 +200,48 @@ For single-port serving (no Node at runtime), build the bundle once with `npm ru
 The architectural rules — code-first evaluators, no data egress, human-in-the-loop, Phoenix SDK for writes / MCP for reads, pinned Phoenix versions — are summarized in the README. Read those before opening a non-trivial PR.
 
 CI rejects suppressions (`# noqa`, `# type: ignore`, `// eslint-disable`, `as any`). If a rule fires, fix the root cause.
+
+## Phoenix API Cheatsheet
+
+The Phoenix surface Nengok actually calls. Use this as the canonical reference when writing or reviewing code that touches `nengok/phoenix/`. MCP tools are reliable for reading traces, spans, and sessions; dataset creation and experiment execution go through the Python SDK because it has been more stable for programmatic workflows.
+
+```python
+from phoenix.client import Client
+from phoenix.client.experiments import run_experiment
+from phoenix.evals import create_evaluator, ClassificationEvaluator, LLM
+from phoenix.otel import register, SpanAttributes
+
+# Tracing
+register(project_name="...", auto_instrument=True)
+
+# Read spans
+px_client = Client()
+spans = px_client.spans.get_spans(project_identifier="...", limit=200)
+
+# Create dataset
+dataset = px_client.datasets.create_dataset(name="...", inputs=[...], outputs=[...])
+
+# Run experiment
+experiment = px_client.experiments.run_experiment(
+    dataset=dataset, task=task_fn, evaluators=[...],
+    experiment_name="...", dry_run=3  # sanity check first
+)
+
+# Add evals to existing experiment
+px_client.experiments.evaluate_experiment(experiment=experiment, evaluators=[...])
+
+# Code evaluator
+@create_evaluator(name="check", kind="code")
+def my_eval(output, expected) -> bool: ...
+
+# LLM-as-Judge evaluator (mustache templates)
+judge = ClassificationEvaluator(
+    name="correctness",
+    prompt_template="...{{input}}...{{output}}...",
+    llm=LLM(provider="google", model="gemini-3-flash-preview"),
+    choices={"correct": 1.0, "incorrect": 0.0},
+)
+```
 
 ## Naming Conventions
 

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from dotenv import load_dotenv
 
 from nengok import __version__
 from nengok.config import DEFAULT_CONFIG_PATH, NengokConfig
@@ -45,6 +46,7 @@ def main(
     ] = None,
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Enable debug logging.")] = False,
 ) -> None:
+    load_dotenv(override=False)
     configure_logging(verbose=verbose)
 
 

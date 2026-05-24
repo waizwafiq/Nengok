@@ -57,6 +57,17 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 - **Human approval gate.** Every fix lands in `artifacts/` and waits for a one-click approve / reject / dismiss in the local dashboard.
 - **Zero data egress.** Your traces stay in your Phoenix. Your Gemini key calls Google directly from your machine. Nothing in this loop goes to a Nengok-controlled endpoint.
 
+## Stack
+
+- Python 3.11+ for the SDK and engine, TypeScript for the dashboard.
+- Gemini 3.1 for reasoning (`gemini-3.1-pro-preview`) and LLM-as-Judge (`gemini-3-flash-preview`).
+- Google ADK as the agent framework.
+- Arize Phoenix for observability (MCP server, Python SDK, CLI).
+- FastAPI bundled inside the SDK to serve the dashboard API.
+- Vite, React, TypeScript, and Tailwind for the frontend.
+- SQLite for cluster lifecycle state, via `nengok/state/store.py`.
+- `pip install nengok` for local use; Cloud Run for the hackathon hosted URL.
+
 ## Quickstart
 
 ### Prerequisites
@@ -198,6 +209,18 @@ These are non-negotiable for every contribution. See [`.github/CONTRIBUTING.md`]
 - **v0.2:** Git MCP integration. Approved artifacts open as PRs automatically.
 - **v0.3:** Multi-agent monitoring, event-driven heartbeat, cluster state persistence across cycles.
 - **v0.4:** Managed cloud tier (open-core, following the Langfuse playbook). The self-hosted SDK stays the source of truth.
+
+### Out of scope for v0.1
+
+The v0.1 hackathon release intentionally defers:
+
+- Git MCP integration. Approved fixes write to `artifacts/`; opening them as PRs lands in v0.2.
+- Event-driven heartbeat cycle. The current loop polls on a fixed 5-minute interval. Event-driven scheduling lands in v0.3.
+- Span deduplication across cycles. The demo uses controlled traffic so re-ingest is not a problem.
+- Cluster lifecycle persistence across cycles. The loop runs once per demo; persistence lands in v0.3.
+- Real-time executive dashboard with historical trends. The pitch video uses a static mockup.
+- HDBSCAN clustering pipeline. v0.1 ships Gemini-only clustering; HDBSCAN is a stretch goal.
+- Multi-agent monitoring. v0.1 watches a single Travel Planner; multi-agent monitoring lands in v0.3.
 
 ## Acknowledgements
 
