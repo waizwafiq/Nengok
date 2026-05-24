@@ -60,6 +60,7 @@ clustering = [
 ]
 gemini = [
     "google-genai>=0.7.0",
+    "openinference-instrumentation-google-genai>=1.0.0",
 ]
 dev = [
     "ruff==0.6.9",

@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -19,25 +20,58 @@ from dotenv import load_dotenv
 from sample_agent.tools import failure_modes, flights, hotels, weather
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "travel_planner.md"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 def build_itinerary(query: str) -> dict:
     """
-    Stand-in for the LLM call.
+    Plan an itinerary by calling the three mock tools and asking Gemini
+    to compose them into a multi-day plan.
 
-    The hackathon-time implementation replaces this body with a real
-    Gemini call via Google ADK. The shape of the return value mirrors
-    what the agent emits today so the rest of the pipeline is stable.
+    Tool outputs and the system prompt are passed verbatim to Gemini so
+    the injected failure modes (schema drift, unit mismatch, hotels
+    timeout) surface as anomalies on the LLM span Phoenix records.
     """
+    from google import genai
+
+    flights_data: object
+    hotels_error: str | None = None
+    try:
+        hotels_data = hotels.search_hotels(city="Tokyo", nights=3)
+    except hotels.HotelsTimeoutError as exc:
+        hotels_data = []
+        hotels_error = str(exc)
+
     flights_data = flights.search_flights(origin="KUL", destination="HND")
     weather_data = weather.get_forecast(city="Tokyo")
-    hotels_data = hotels.search_hotels(city="Tokyo", nights=3)
+
+    system_prompt = PROMPT_PATH.read_text(encoding="utf-8")
+    tool_payload = {
+        "flights": flights_data,
+        "weather": weather_data,
+        "hotels": hotels_data,
+        "hotels_error": hotels_error,
+    }
+    user_prompt = (
+        f"User query: {query}\n\n"
+        f"Tool outputs (JSON):\n{json.dumps(tool_payload, indent=2)}\n\n"
+        "Compose a short itinerary that cites each tool result. If a tool "
+        "returned an unexpected schema, unit, or error, flag it explicitly."
+    )
+
+    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    response = client.models.generate_content(
+        model=os.environ.get("SAMPLE_AGENT_MODEL", DEFAULT_MODEL),
+        contents=[{"role": "user", "parts": [{"text": system_prompt + "\n\n" + user_prompt}]}],
+    )
 
     return {
         "query": query,
         "flights": flights_data,
         "weather": weather_data,
         "hotels": hotels_data,
+        "hotels_error": hotels_error,
+        "itinerary": response.text,
         "prompt_source": PROMPT_PATH.name,
     }
 
