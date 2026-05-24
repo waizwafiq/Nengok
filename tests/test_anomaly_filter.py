@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from nengok.core.observer.anomaly_filter import AnomalyFilter
 from nengok.core.types import AnomalySignal, TraceSpan
 
 
-def _span(**overrides: object) -> TraceSpan:
-    defaults: dict[str, object] = {
+def _span(**overrides: Any) -> TraceSpan:
+    defaults: dict[str, Any] = {
         "span_id": "s1",
         "trace_id": "t1",
         "name": "agent.respond",
@@ -19,7 +21,7 @@ def _span(**overrides: object) -> TraceSpan:
         "annotations": {},
     }
     defaults.update(overrides)
-    return TraceSpan(**defaults)  # type: ignore[arg-type]
+    return TraceSpan(**defaults)
 
 
 def test_healthy_span_is_not_flagged() -> None:

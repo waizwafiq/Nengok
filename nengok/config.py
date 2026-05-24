@@ -18,6 +18,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_CONFIG_PATH = Path.home() / ".nengok" / "config.toml"
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
@@ -62,7 +63,7 @@ class NengokConfig:
     dashboard_port: int = DEFAULT_DASHBOARD_PORT
 
     @classmethod
-    def load(cls, config_path: Path | None = None, **overrides: object) -> NengokConfig:
+    def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
         """
         Build a config from disk + env + explicit overrides.
 
@@ -73,7 +74,7 @@ class NengokConfig:
         file_values = _read_config_file(config_path or DEFAULT_CONFIG_PATH)
         env_values = _read_env()
 
-        merged: dict[str, object] = {**file_values, **env_values, **overrides}
+        merged: dict[str, Any] = {**file_values, **env_values, **overrides}
 
         if "phoenix_base_url" not in merged:
             raise ValueError(
@@ -85,10 +86,10 @@ class NengokConfig:
             if path_key in merged and not isinstance(merged[path_key], Path):
                 merged[path_key] = Path(str(merged[path_key]))
 
-        return cls(**merged)  # type: ignore[arg-type]
+        return cls(**merged)
 
 
-def _read_config_file(path: Path) -> dict[str, object]:
+def _read_config_file(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     with path.open("rb") as fh:
@@ -96,7 +97,7 @@ def _read_config_file(path: Path) -> dict[str, object]:
     return data.get("nengok", {})
 
 
-def _read_env() -> dict[str, object]:
+def _read_env() -> dict[str, Any]:
     mapping = {
         "PHOENIX_BASE_URL": "phoenix_base_url",
         "PHOENIX_API_KEY": "phoenix_api_key",
@@ -106,7 +107,7 @@ def _read_env() -> dict[str, object]:
         "NENGOK_STATE_DB": "state_db_path",
         "NENGOK_DASHBOARD_PORT": "dashboard_port",
     }
-    out: dict[str, object] = {}
+    out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
         value = os.environ.get(env_key)
         if value is None:

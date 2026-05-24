@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -161,7 +161,7 @@ def dashboard(
     uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
 
 
-def _load_config(**overrides: object) -> NengokConfig:
+def _load_config(**overrides: Any) -> NengokConfig:
     try:
         cleaned = {k: v for k, v in overrides.items() if v is not None}
         return NengokConfig.load(**cleaned)
