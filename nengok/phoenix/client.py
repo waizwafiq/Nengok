@@ -84,6 +84,24 @@ class PhoenixWrapper:
         batch = self.get_spans(project_identifier=project_identifier, limit=limit)
         return [s for s in batch if s.span_id in wanted]
 
+    def get_prompt_version(self, *, name: str) -> str | None:
+        """
+        Return the latest prompt template for ``name`` from Phoenix.
+
+        Falls back to ``None`` when Phoenix does not have a prompt by
+        that identifier so callers can apply their own fallback (a
+        bundled file or ``config.baseline_prompt_path``).
+        """
+        client = self._get_client()
+        try:
+            version = client.prompts.get(prompt_identifier=name)
+        except ValueError:
+            return None
+        template = getattr(version, "template", None)
+        if template is None:
+            return None
+        return str(template)
+
     def create_dataset(self, *, name: str, cases: list[RegressionTestCase]) -> Any:
         client = self._get_client()
         inputs = [c.input for c in cases]
