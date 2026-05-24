@@ -79,6 +79,15 @@ def build_itinerary(query: str) -> dict:
 def main() -> None:
     load_dotenv(override=False)
 
+    if os.environ.get("PHOENIX_BASE_URL"):
+        _maybe_register_phoenix_tracing()
+    else:
+        print(
+            "WARNING: PHOENIX_BASE_URL is not set. This run will not emit traces to Phoenix. "
+            "Copy .env.example to .env (or export PHOENIX_BASE_URL in your shell) and rerun.",
+            file=sys.stderr,
+        )
+
     parser = argparse.ArgumentParser(description="Travel Planner demo agent.")
     parser.add_argument("--query", default="Plan a 3-day trip from KL to Tokyo")
     parser.add_argument(
@@ -91,15 +100,6 @@ def main() -> None:
 
     failure_modes.configure(args.inject)
 
-    if os.environ.get("PHOENIX_BASE_URL"):
-        _maybe_register_phoenix_tracing()
-    else:
-        print(
-            "WARNING: PHOENIX_BASE_URL is not set. This run will not emit traces to Phoenix. "
-            "Copy .env.example to .env (or export PHOENIX_BASE_URL in your shell) and rerun.",
-            file=sys.stderr,
-        )
-
     result = build_itinerary(args.query)
     print(result)
 
@@ -110,7 +110,19 @@ def _maybe_register_phoenix_tracing() -> None:
         from phoenix.otel import register
     except ImportError:
         return
-    register(project_name="travel-planner-agent", auto_instrument=True)
+    tracer_provider = register(project_name="travel-planner-agent", auto_instrument=True)
+
+    # `auto_instrument=True` relies on package metadata to pick up
+    # openinference-instrumentation-google-genai, which has been flaky when
+    # the genai client is imported lazily inside build_itinerary. The
+    # explicit instrument() call guarantees the LLM span shows up in Phoenix.
+    try:
+        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
+    except ImportError:
+        return
+    instrumentor = GoogleGenAIInstrumentor()
+    if not instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.instrument(tracer_provider=tracer_provider)
 
 
 if __name__ == "__main__":  # pragma: no cover
