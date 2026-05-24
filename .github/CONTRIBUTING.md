@@ -120,6 +120,8 @@ phoenix serve
 
 Phoenix UI: <http://localhost:6006>.
 
+Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for read-side MCP operations. Pin to `@arizeai/phoenix-mcp@4.0.13`. There is no Python wheel; install with `npm i -g @arizeai/phoenix-mcp@4.0.13` if you plan to exercise the MCP read path. Bumping the pin is a deliberate change that should land in its own PR.
+
 ### 5. Generate traces with the sample agent
 
 In a new terminal with the venv activated, run the Travel Planner demo a few times with all failure modes injected:

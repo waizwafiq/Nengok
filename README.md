@@ -62,7 +62,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 - Python 3.11+ for the SDK and engine, TypeScript for the dashboard.
 - Gemini 3.1 for reasoning (`gemini-3.1-pro-preview`) and LLM-as-Judge (`gemini-3-flash-preview`).
 - Google ADK as the agent framework.
-- Arize Phoenix for observability (MCP server, Python SDK, CLI).
+- Arize Phoenix for observability (Python SDK + `@arizeai/phoenix-mcp@4.0.13`, CLI).
 - FastAPI bundled inside the SDK to serve the dashboard API.
 - Vite, React, TypeScript, and Tailwind for the frontend.
 - SQLite for cluster lifecycle state, via `nengok/state/store.py`.
