@@ -10,7 +10,7 @@ import pytest
 from nengok.config import NengokConfig
 from nengok.core.evaluators.code_evals import output_is_present
 from nengok.phoenix.client import PhoenixWrapper
-from nengok.runners.agent_runner import register_runner
+from nengok.runners.agent_runner import SAMPLE_AGENT_PROJECT, register_runner
 
 TEST_PROJECT = "phoenix-client-test-project"
 
@@ -159,3 +159,103 @@ def test_run_experiment_failing_code_eval_drops_pass_rate(
     )
 
     assert result.pass_rate == 0.0
+
+
+class _GoldenDatasets:
+    def __init__(self, existing: bool) -> None:
+        self.existing = existing
+        self.create_calls: list[dict[str, Any]] = []
+        self.get_calls: list[str] = []
+
+    def get_dataset(self, *, dataset: str) -> Any:
+        self.get_calls.append(dataset)
+        if self.existing:
+            return {"name": dataset, "source": "lookup"}
+        raise ValueError(f"dataset {dataset} not found")
+
+    def create_dataset(self, **kwargs: Any) -> Any:
+        self.create_calls.append(kwargs)
+        return {"name": kwargs["name"], "source": "created"}
+
+
+class _GoldenClient:
+    def __init__(self, *, ran: dict[str, Any], dataset_existing: bool) -> None:
+        self.datasets = _GoldenDatasets(existing=dataset_existing)
+        self.experiments = _FakeExperiments(ran)
+
+
+@pytest.fixture
+def sample_agent_runner_registered() -> None:
+    def runner(input_row: dict[str, Any], prompt: str) -> dict[str, Any]:
+        del prompt
+        return {"itinerary": f"plan-for-{input_row.get('query', '')}"}
+
+    register_runner(SAMPLE_AGENT_PROJECT, runner)
+
+
+def test_run_golden_comparison_creates_dataset_when_missing(
+    tmp_config: NengokConfig,
+    sample_agent_runner_registered: None,
+) -> None:
+    del sample_agent_runner_registered
+    config = replace(tmp_config, project_identifier=SAMPLE_AGENT_PROJECT)
+    wrapper = PhoenixWrapper(config)
+    wrapper._client = _GoldenClient(ran=_stub_ran_experiment(), dataset_existing=False)
+
+    baseline, fix = wrapper.run_golden_comparison(
+        baseline_prompt="BASE",
+        proposed_prompt="FIX",
+        evaluators=[output_is_present],
+    )
+
+    assert baseline.pass_rate == 1.0
+    assert fix.pass_rate == 1.0
+    datasets = wrapper._client.datasets
+    assert datasets.get_calls == ["travel-planner-golden-v1"]
+    assert len(datasets.create_calls) == 1
+    assert datasets.create_calls[0]["name"] == "travel-planner-golden-v1"
+    assert {call["experiment_name"] for call in wrapper._client.experiments.calls} == {
+        "golden-baseline-v1",
+        "golden-fix-v1",
+    }
+
+
+def test_run_golden_comparison_reuses_existing_dataset(
+    tmp_config: NengokConfig,
+    sample_agent_runner_registered: None,
+) -> None:
+    del sample_agent_runner_registered
+    config = replace(tmp_config, project_identifier=SAMPLE_AGENT_PROJECT)
+    wrapper = PhoenixWrapper(config)
+    wrapper._client = _GoldenClient(ran=_stub_ran_experiment(), dataset_existing=True)
+
+    wrapper.run_golden_comparison(
+        baseline_prompt="BASE",
+        proposed_prompt="FIX",
+        evaluators=[output_is_present],
+    )
+
+    assert wrapper._client.datasets.create_calls == []
+
+
+def test_run_golden_comparison_caches_loaded_json(
+    tmp_config: NengokConfig,
+    sample_agent_runner_registered: None,
+) -> None:
+    del sample_agent_runner_registered
+    config = replace(tmp_config, project_identifier=SAMPLE_AGENT_PROJECT)
+    wrapper = PhoenixWrapper(config)
+    wrapper._client = _GoldenClient(ran=_stub_ran_experiment(), dataset_existing=False)
+
+    wrapper.run_golden_comparison(
+        baseline_prompt="BASE",
+        proposed_prompt="FIX",
+        evaluators=[output_is_present],
+    )
+    wrapper.run_golden_comparison(
+        baseline_prompt="BASE2",
+        proposed_prompt="FIX2",
+        evaluators=[output_is_present],
+    )
+
+    assert len(wrapper._client.datasets.create_calls) == 1
