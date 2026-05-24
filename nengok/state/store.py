@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
