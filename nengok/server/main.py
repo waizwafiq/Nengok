@@ -22,6 +22,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import Scope
 
 from nengok import __version__
 from nengok.config import NengokConfig
@@ -32,6 +35,24 @@ _PACKAGE_STATIC_DIR = Path(__file__).resolve().parent / "static"
 _REPO_FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 logger = get_logger(__name__)
+
+
+class _SpaStaticFiles(StaticFiles):
+    """
+    Static file handler that falls back to index.html on 404.
+
+    Without this, hard refreshing or deep-linking to a client-side
+    route like /overview returns FastAPI's default JSON 404 instead
+    of letting React Router handle the path.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            return await super().get_response("index.html", scope)
 
 
 def _resolve_frontend_dir() -> Path | None:
@@ -72,7 +93,7 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     frontend_dir = _resolve_frontend_dir()
     if frontend_dir is not None:
         logger.info("serving dashboard assets from %s", frontend_dir)
-        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+        app.mount("/", _SpaStaticFiles(directory=frontend_dir, html=True), name="frontend")
     else:
         logger.warning(
             "dashboard assets not found; API routes will work but / will return JSON. "
