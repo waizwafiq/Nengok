@@ -37,15 +37,19 @@ pip install --user uv
 # Download a managed CPython 3.12 (no admin, no PATH changes)
 python -m uv python install 3.12
 
-# Create the venv and install everything
-python -m uv venv --python 3.12
+# Create the venv (`--seed` adds a `pip` binary inside it; see note below)
+python -m uv venv --seed --python 3.12
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-python -m uv pip install -e ".[dev]"
+
+# Install Nengok in editable mode with dev tools and Phoenix client
+python -m uv pip install -e ".[dev,phoenix]"
 ```
 
 Cold install: under 10 seconds.
 
 If `uv` is not on your PATH after `pip install --user uv`, keep invoking it as `python -m uv ...` or run `python -m uv python update-shell` once.
+
+**Why `--seed`?** A bare `uv venv` does not install `pip` inside the venv. After activation, running plain `pip install <pkg>` then falls back to your *system* Python's pip and installs the package outside the venv, where Nengok cannot see it. `--seed` puts a real `pip` inside `.venv/Scripts/`, so both `pip install` and `python -m uv pip install` write to the right place.
 
 #### Stock path: `pip`
 
@@ -54,12 +58,12 @@ Needs Python 3.11+ already installed and on your PATH.
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev,phoenix]"
 ```
 
 Cold install: 2 to 5 minutes on Windows because `uvicorn[standard]` pulls in a few Rust-built dependencies.
 
-You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`).
+You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`) and the Phoenix client. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it.
 
 ### 3. Configure environment
 

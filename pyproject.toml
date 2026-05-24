@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 phoenix = [
-    "arize-phoenix-client==1.16.0",
+    "arize-phoenix-client==2.7.0",
     "arize-phoenix-evals>=0.20.0",
     "arize-phoenix-otel>=0.16.0",
     "openinference-instrumentation>=0.1.0",
