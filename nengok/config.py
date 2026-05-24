@@ -60,6 +60,7 @@ class NengokConfig:
 
     artifacts_dir: Path = field(default_factory=lambda: DEFAULT_ARTIFACTS_DIR)
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
+    baseline_prompt_path: Path | None = None
 
     dashboard_host: str = DEFAULT_DASHBOARD_HOST
     dashboard_port: int = DEFAULT_DASHBOARD_PORT
@@ -84,9 +85,10 @@ class NengokConfig:
                 "Run `nengok init --phoenix-url <url>` or set PHOENIX_BASE_URL."
             )
 
-        for path_key in ("artifacts_dir", "state_db_path"):
-            if path_key in merged and not isinstance(merged[path_key], Path):
-                merged[path_key] = Path(str(merged[path_key]))
+        for path_key in ("artifacts_dir", "state_db_path", "baseline_prompt_path"):
+            value = merged.get(path_key)
+            if value is not None and not isinstance(value, Path):
+                merged[path_key] = Path(str(value))
 
         return cls(**merged)
 
@@ -109,6 +111,7 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_ARTIFACTS_DIR": "artifacts_dir",
         "NENGOK_STATE_DB": "state_db_path",
         "NENGOK_DASHBOARD_PORT": "dashboard_port",
+        "NENGOK_BASELINE_PROMPT_PATH": "baseline_prompt_path",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
