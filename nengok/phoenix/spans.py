@@ -39,7 +39,8 @@ def _to_dict(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return raw
     if hasattr(raw, "model_dump"):
-        return raw.model_dump()
+        dumped: dict[str, Any] = raw.model_dump()
+        return dumped
     if hasattr(raw, "__dict__"):
         return {k: v for k, v in vars(raw).items() if not k.startswith("_")}
     return {}

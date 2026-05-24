@@ -12,8 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nengok.config import NengokConfig
-from nengok.core.evaluators.code_evals import default_code_evaluators
-from nengok.core.evaluators.llm_judges import default_judges
+from nengok.core.evaluators.code_evals import CodeEvaluator, default_code_evaluators
+from nengok.core.evaluators.llm_judges import JudgeSpec, default_judges
 from nengok.core.types import Cluster, ExperimentResult, PromptProposal, RegressionTestCase
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.utils.logging import get_logger
@@ -36,7 +36,10 @@ class ExperimentRunner:
         dataset_name = f"{cluster.name}-regression"
         dataset_ref = self.phoenix.create_dataset(name=dataset_name, cases=cases)
 
-        evaluators = [*default_code_evaluators(), *default_judges(self.config)]
+        evaluators: list[CodeEvaluator | JudgeSpec] = [
+            *default_code_evaluators(),
+            *default_judges(self.config),
+        ]
 
         baseline = self.phoenix.run_experiment(
             dataset_ref=dataset_ref,

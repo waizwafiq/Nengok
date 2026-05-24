@@ -94,7 +94,8 @@ def _read_config_file(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as fh:
         data = tomllib.load(fh)
-    return data.get("nengok", {})
+    section: dict[str, Any] = data.get("nengok", {})
+    return section
 
 
 def _read_env() -> dict[str, Any]:
