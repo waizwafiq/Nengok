@@ -90,11 +90,19 @@ def run(
         bool,
         typer.Option("--dry-run", help="Run the full pipeline but do not write artifacts or experiments."),
     ] = False,
+    skip_preflight: Annotated[
+        bool,
+        typer.Option("--skip-preflight", help="Skip the MCP project existence check."),
+    ] = False,
 ) -> None:
     """Execute one full Observe -> Diagnose -> Fix -> Verify cycle."""
     from nengok.core.orchestrator import Orchestrator
+    from nengok.phoenix.preflight import run_preflight
 
     config = _load_config(project_identifier=project)
+    if not skip_preflight:
+        run_preflight(config, echo=lambda msg: typer.echo(msg, err=True))
+
     orchestrator = Orchestrator(config=config)
     result = orchestrator.run_once(dry_run=dry_run)
 

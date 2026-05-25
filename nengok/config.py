@@ -32,9 +32,15 @@ DEFAULT_MIN_CLUSTER_SIZE = 3
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
 DEFAULT_GOLDEN_REGRESSION_LIMIT = 0.02
 DEFAULT_DRY_RUN_SAMPLES = 3
+DEFAULT_CLUSTER_TRACE_CHAR_BUDGET = 2000
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
+
+DEFAULT_MCP_PACKAGE = "@arizeai/phoenix-mcp@4.0.13"
+DEFAULT_MCP_NPX_COMMAND = "npx"
+DEFAULT_MCP_STARTUP_TIMEOUT = 30.0
+DEFAULT_MCP_REQUEST_TIMEOUT = 30.0
 
 
 @dataclass(frozen=True)
@@ -55,12 +61,20 @@ class NengokConfig:
     regression_pass_threshold: float = DEFAULT_REGRESSION_PASS_THRESHOLD
     golden_regression_limit: float = DEFAULT_GOLDEN_REGRESSION_LIMIT
     dry_run_samples: int = DEFAULT_DRY_RUN_SAMPLES
+    cluster_trace_char_budget: int = DEFAULT_CLUSTER_TRACE_CHAR_BUDGET
 
     artifacts_dir: Path = field(default_factory=lambda: DEFAULT_ARTIFACTS_DIR)
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
+    baseline_prompt_path: Path | None = None
 
     dashboard_host: str = DEFAULT_DASHBOARD_HOST
     dashboard_port: int = DEFAULT_DASHBOARD_PORT
+
+    mcp_enabled: bool = True
+    mcp_npx_command: str = DEFAULT_MCP_NPX_COMMAND
+    mcp_package: str = DEFAULT_MCP_PACKAGE
+    mcp_startup_timeout: float = DEFAULT_MCP_STARTUP_TIMEOUT
+    mcp_request_timeout: float = DEFAULT_MCP_REQUEST_TIMEOUT
 
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
@@ -82,9 +96,10 @@ class NengokConfig:
                 "Run `nengok init --phoenix-url <url>` or set PHOENIX_BASE_URL."
             )
 
-        for path_key in ("artifacts_dir", "state_db_path"):
-            if path_key in merged and not isinstance(merged[path_key], Path):
-                merged[path_key] = Path(str(merged[path_key]))
+        for path_key in ("artifacts_dir", "state_db_path", "baseline_prompt_path"):
+            value = merged.get(path_key)
+            if value is not None and not isinstance(value, Path):
+                merged[path_key] = Path(str(value))
 
         return cls(**merged)
 
@@ -107,6 +122,10 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_ARTIFACTS_DIR": "artifacts_dir",
         "NENGOK_STATE_DB": "state_db_path",
         "NENGOK_DASHBOARD_PORT": "dashboard_port",
+        "NENGOK_BASELINE_PROMPT_PATH": "baseline_prompt_path",
+        "NENGOK_MCP_ENABLED": "mcp_enabled",
+        "NENGOK_MCP_NPX_COMMAND": "mcp_npx_command",
+        "NENGOK_MCP_PACKAGE": "mcp_package",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
@@ -115,6 +134,12 @@ def _read_env() -> dict[str, Any]:
             continue
         if config_key == "dashboard_port":
             out[config_key] = int(value)
+        elif config_key == "mcp_enabled":
+            out[config_key] = _parse_bool(value)
         else:
             out[config_key] = value
     return out
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
