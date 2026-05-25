@@ -31,3 +31,21 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 
 CREATE INDEX IF NOT EXISTS approvals_cluster_idx ON approvals (cluster_id);
+
+CREATE TABLE IF NOT EXISTS experiments (
+    row_id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    experiment_id              TEXT,
+    cluster_id                 TEXT NOT NULL,
+    experiment_name            TEXT NOT NULL,
+    dataset_name               TEXT NOT NULL,
+    baseline_pass_rate         REAL NOT NULL,
+    fix_pass_rate              REAL NOT NULL,
+    golden_baseline_pass_rate  REAL NOT NULL,
+    golden_fix_pass_rate       REAL NOT NULL,
+    per_case_json              TEXT NOT NULL,
+    created_at                 TEXT NOT NULL,
+    FOREIGN KEY (cluster_id) REFERENCES clusters (cluster_id)
+);
+
+CREATE INDEX IF NOT EXISTS experiments_cluster_idx ON experiments (cluster_id);
+CREATE INDEX IF NOT EXISTS experiments_created_idx ON experiments (created_at);

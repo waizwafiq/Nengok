@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 
-from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
+from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus, ExperimentResult
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -127,3 +127,50 @@ class StateStore:
                 (approval_id, cluster_id, decision, decided_by, now, notes),
             )
         return approval_id
+
+    def record_experiment(self, *, cluster_id: str, result: ExperimentResult) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO experiments
+                  (experiment_id, cluster_id, experiment_name, dataset_name,
+                   baseline_pass_rate, fix_pass_rate,
+                   golden_baseline_pass_rate, golden_fix_pass_rate,
+                   per_case_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    result.experiment_id,
+                    cluster_id,
+                    result.experiment_name,
+                    result.dataset_name,
+                    result.baseline_pass_rate,
+                    result.fix_pass_rate,
+                    result.golden_baseline_pass_rate,
+                    result.golden_fix_pass_rate,
+                    json.dumps(result.per_case),
+                    now,
+                ),
+            )
+
+    def latest_experiment(self, cluster_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT experiment_id, cluster_id, experiment_name, dataset_name,
+                       baseline_pass_rate, fix_pass_rate,
+                       golden_baseline_pass_rate, golden_fix_pass_rate,
+                       per_case_json, created_at
+                FROM experiments
+                WHERE cluster_id = ?
+                ORDER BY created_at DESC, row_id DESC
+                LIMIT 1
+                """,
+                (cluster_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        record = dict(row)
+        record["per_case"] = json.loads(record.pop("per_case_json"))
+        return record
