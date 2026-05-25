@@ -18,8 +18,8 @@ export function Header() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="flex h-14 items-center px-3">
-        <div className="relative flex h-7 w-9 shrink-0 items-center justify-start">
+      <div className="flex h-14 items-center pl-4 pr-3">
+        <div className="relative flex h-20 w-24 shrink-0 items-center justify-start">
           <img
             src={logoMark}
             alt=""
@@ -77,10 +77,10 @@ function NavGroup({
     <div className="flex flex-col gap-1">
       <div
         className={cn(
-          "section-label overflow-hidden whitespace-nowrap px-2 text-white/40",
-          COLLAPSE_TRANSITION,
-          collapsed ? "max-h-0 opacity-0" : "max-h-4 opacity-100",
+          "section-label whitespace-nowrap px-2 text-white/40 transition-opacity duration-200 ease-out",
+          collapsed ? "opacity-0" : "opacity-100",
         )}
+        aria-hidden={collapsed}
       >
         {label}
       </div>
