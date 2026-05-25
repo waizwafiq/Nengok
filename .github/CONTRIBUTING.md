@@ -155,7 +155,22 @@ nengok run
 
 `nengok init` writes config to `~/.nengok/config.toml`. `--phoenix-url` is required; `--project` defaults to the literal string `"default"` if you omit it, so pass `--project travel-planner-agent` to match the sample agent. If your Phoenix needs auth, add `--api-key <key>`; otherwise `nengok run` falls back to `PHOENIX_API_KEY` from your `.env` at request time. (Today the CLI does not read `PHOENIX_BASE_URL` or `NENGOK_PROJECT` from `.env` — only `PHOENIX_API_KEY` is picked up later at runtime.)
 
-If `nengok run` reports `404 Not Found` on the spans endpoint, the Phoenix project does not exist yet. The current `sample_agent` stub does not emit spans (see step 5), so a fresh Phoenix install will hit this until you wire a real LLM call into `build_itinerary` or seed the project from another instrumented script.
+Before the Observer fires, `nengok run` performs an MCP preflight against the configured Phoenix project. If `npx` is on PATH, the check spawns `@arizeai/phoenix-mcp@4.0.13`, calls `list_projects`, and prints a `Heads up: Phoenix project '...' was not found via MCP` line on stderr when the project is missing. The cycle still runs (the warning is best-effort), but the message tells you up front why the Observer is about to return zero spans. Pass `--skip-preflight` to suppress the check; set `NENGOK_MCP_ENABLED=0` to disable it for every run. If `npx` is missing, the preflight downgrades to a debug log and is a no-op.
+
+For projects other than the bundled `travel-planner-agent`, register an agent runner before invoking `nengok run`:
+
+```python
+from nengok.runners import register_runner
+
+def my_runner(input_row: dict, prompt: str) -> dict:
+    ...
+
+register_runner("my-phoenix-project", my_runner)
+```
+
+The runner is what the Phoenix experiment task calls per dataset row, with the candidate prompt injected so a fix can be A/B'd against the baseline. Without a runner, `run_experiment` raises `RuntimeError: No agent runner registered for project ...`.
+
+After a successful cycle Phoenix will hold two projects: your monitored project plus `nengok-meta-agent`, which stores the four-span trace per cycle (`nengok.cycle` -> `observer` / `diagnoser` / `fixer` / `verifier`) the orchestrator emits via `nengok.utils.tracing`. The meta-tracer needs `arize-phoenix-otel` (already in the `phoenix` extra). When the extra is missing, the spans silently drop and the loop runs as before.
 
 ### 7. Launch the dashboard (optional)
 
