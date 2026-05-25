@@ -36,7 +36,13 @@ def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
     baseline. The Phoenix experiment runner uses this to compare a
     candidate fix against the on-disk prompt without touching the file.
     """
-    from google import genai
+    try:
+        from google import genai
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-genai is not installed; the sample agent needs it to call Gemini. "
+            'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
+        ) from exc
 
     flights_data: object
     hotels_error: str | None = None
@@ -109,21 +115,39 @@ def main() -> None:
 
 
 def _maybe_register_phoenix_tracing() -> None:
-    """Wire OpenInference traces into Phoenix if the env vars are set."""
+    """
+    Wire OpenInference traces into Phoenix when PHOENIX_BASE_URL is set.
+
+    Both dependencies are required for the sample agent's traces to
+    reach Phoenix. A silent return here used to be the failure mode
+    reported in step 6 of CONTRIBUTING.md: the Gemini call still ran,
+    but no span shipped, the ``travel-planner-agent`` project never
+    got created, and ``nengok run`` 404d on its first span fetch.
+    """
     try:
         from phoenix.otel import register
-    except ImportError:
-        return
+    except ImportError as exc:
+        raise RuntimeError(
+            "arize-phoenix-otel is not installed but PHOENIX_BASE_URL is set. "
+            'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
+        ) from exc
+
+    try:
+        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
+    except ImportError as exc:
+        raise RuntimeError(
+            "openinference-instrumentation-google-genai is not installed. "
+            "Without it, the Gemini call emits no spans, the 'travel-planner-agent' "
+            "project never gets created in Phoenix, and 'nengok run' will 404. "
+            'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
+        ) from exc
+
     tracer_provider = register(project_name="travel-planner-agent", auto_instrument=True)
 
     # `auto_instrument=True` relies on package metadata to pick up
     # openinference-instrumentation-google-genai, which has been flaky when
     # the genai client is imported lazily inside build_itinerary. The
     # explicit instrument() call guarantees the LLM span shows up in Phoenix.
-    try:
-        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
-    except ImportError:
-        return
     instrumentor = GoogleGenAIInstrumentor()
     if not instrumentor.is_instrumented_by_opentelemetry:
         instrumentor.instrument(tracer_provider=tracer_provider)
