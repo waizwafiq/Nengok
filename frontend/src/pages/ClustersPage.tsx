@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { fetchClusters } from "../api/clusters";
 import { ClusterCard } from "../components/clusters/ClusterCard";
 import { PageHeader } from "../components/layout/PageHeader";
+import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import type { ClusterStatus } from "../types/cluster";
 import { cn } from "../lib/cn";
 
@@ -16,6 +17,7 @@ const STATUS_FILTERS: { value: ClusterStatus | "all"; label: string }[] = [
 ];
 
 export function ClustersPage() {
+  useLayoutBreadcrumb([{ label: "Workspace" }, { label: "Clusters" }]);
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status");
   const activeStatus = isClusterStatus(statusParam) ? statusParam : "all";
@@ -40,7 +42,6 @@ export function ClustersPage() {
       <PageHeader
         title="Clusters"
         description="Each group is a named failure pattern detected by the observer."
-        breadcrumb={[{ label: "Workspace" }, { label: "Clusters" }]}
         actions={<StatusFilterBar active={activeStatus} onSelect={applyFilter} />}
       />
 

@@ -4,9 +4,12 @@ import { Link } from "react-router-dom";
 import { fetchDashboardOverview } from "../api/dashboard";
 import { fetchClusters } from "../api/clusters";
 import { PageHeader } from "../components/layout/PageHeader";
+import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
 
 export function OverviewPage() {
+  useLayoutBreadcrumb([{ label: "Workspace" }, { label: "Overview" }]);
+
   const overview = useQuery({
     queryKey: ["dashboard", "overview"],
     queryFn: fetchDashboardOverview,
@@ -20,10 +23,7 @@ export function OverviewPage() {
   if (overview.isLoading) {
     return (
       <div className="mx-auto max-w-7xl p-8">
-        <PageHeader
-          title="Overview"
-          breadcrumb={[{ label: "Workspace" }, { label: "Overview" }]}
-        />
+        <PageHeader title="Overview" />
         <p className="section-label">Loading dashboard metrics</p>
       </div>
     );
@@ -49,7 +49,6 @@ export function OverviewPage() {
       <PageHeader
         title="Portfolio overview"
         description="Every failure cluster Nengok has detected in this project, plus the ones already fixed."
-        breadcrumb={[{ label: "Workspace" }, { label: "Overview" }]}
       />
 
       {totalClusters === 0 ? <EmptyStateBanner /> : null}

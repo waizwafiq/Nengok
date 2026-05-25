@@ -4,6 +4,7 @@ import { fetchCluster } from "../api/clusters";
 import { fetchArtifacts } from "../api/artifacts";
 import { submitApproval } from "../api/approvals";
 import { PageHeader } from "../components/layout/PageHeader";
+import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { StatusBadge } from "../components/StatusBadge";
 import { ExperimentTable } from "../components/clusters/ExperimentTable";
 import { PromptDiff } from "../components/clusters/PromptDiff";
@@ -20,6 +21,12 @@ export function ClusterDetailPage() {
     queryFn: () => fetchCluster(clusterId),
     enabled: Boolean(clusterId),
   });
+
+  useLayoutBreadcrumb([
+    { label: "Workspace" },
+    { label: "Clusters", href: "/clusters" },
+    { label: cluster.data?.name ?? clusterId },
+  ]);
 
   const artifacts = useQuery({
     queryKey: ["artifacts", clusterId],
@@ -48,11 +55,6 @@ export function ClusterDetailPage() {
       <PageHeader
         title={cluster.data.name}
         description={cluster.data.description}
-        breadcrumb={[
-          { label: "Workspace" },
-          { label: "Clusters" },
-          { label: cluster.data.cluster_id },
-        ]}
         actions={
           <div className="flex items-center gap-2">
             <StatusBadge status={cluster.data.status} />
