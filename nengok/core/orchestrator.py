@@ -140,6 +140,7 @@ class Orchestrator:
                         continue
 
                     result = self._experiment_runner.run(cluster=cluster, cases=cases, proposal=proposal)
+                    self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
 
                 with tracer.start_as_current_span("verifier") as verifier_span:
                     set_attributes(verifier_span, cluster_attrs)
