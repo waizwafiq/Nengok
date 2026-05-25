@@ -154,18 +154,17 @@ The `sample_agent/` package ships a Travel Planner with three runtime-toggleable
 | `weather` | Temperature unit silently switches from F to C | Agent suggests a parka for 75 °F weather |
 | `hotels` | Endpoint times out 40 % of the time | Agent hallucinates hotel names instead of erroring |
 
-Run the demo:
+A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retrieval-augmented Q&A with its own `retriever` failure mode, included so Nengok can point at a non-Travel-Planner project without code changes.
+
+Run the demo with one copy-paste:
 
 ```bash
-# 1. Inject all three failures
-python -m sample_agent.agent --inject all
-
-# 2. Let Nengok find and fix them
+python -m sample_agent.seed --count 5
+nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
 nengok run
-
-# 3. Approve the verified fix
-nengok dashboard
 ```
+
+`sample_agent.seed` fires five runs of the Travel Planner with every failure mode injected, then prints the Phoenix project URL. Hand the same project name to `nengok init` and `nengok run` walks the four-stage loop end to end. Run `nengok dashboard` afterwards to approve the verified fix.
 
 ## Architecture
 
