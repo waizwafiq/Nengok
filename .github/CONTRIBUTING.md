@@ -107,6 +107,19 @@ Open `.env` and fill in `GOOGLE_API_KEY` (and `PHOENIX_API_KEY` if your Phoenix 
 
 Nengok and the sample agent both auto-load `.env` from the current directory at startup (via `python-dotenv`), so you do not need to `export` anything in your shell. Run every command from the repo root and the env vars come along for free.
 
+#### Swapping the LLMs
+
+The four Gemini models in the loop are all overridable via environment variables, so you can run the SDK against a different snapshot (or a non-public preview) without editing source or `~/.nengok/config.toml`:
+
+| Env var | Default | What it drives |
+|---|---|---|
+| `NENGOK_DIAGNOSER_MODEL` | `gemini-3.1-pro-preview` | Clusterer + Hypothesizer + Prompt Proposer + Test Generator inside `nengok/core/` |
+| `NENGOK_JUDGE_MODEL` | `gemini-3-flash-preview` | LLM-as-Judge evaluators wired through `nengok/core/evaluators/llm_judges.py` |
+| `SAMPLE_AGENT_MODEL` | `gemini-2.5-flash` | The Travel Planner demo agent in `sample_agent/agent.py` |
+| `QA_AGENT_MODEL` | `gemini-2.5-flash` | The retrieval-augmented Q&A agent in `sample_agent/qa_agent/agent.py` |
+
+The two `NENGOK_*` vars feed `NengokConfig.diagnoser_model` and `NengokConfig.judge_model` through `_read_env()` in `nengok/config.py`, so they win over the on-disk TOML and lose to constructor overrides. The two sample-agent vars are read directly inside each agent's `build_*` / `answer_*` function. The defaults assume Gemini; swapping in a non-Gemini model requires more than an env-var bump because the agents call `google-genai` directly.
+
 ### 4. Start a local Phoenix (optional, for end-to-end work)
 
 If you already have Phoenix Cloud or a remote Phoenix, point `PHOENIX_BASE_URL` and `PHOENIX_API_KEY` at it in `.env` and skip this step.
