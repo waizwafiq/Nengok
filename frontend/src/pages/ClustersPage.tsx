@@ -4,6 +4,8 @@ import { fetchClusters } from "../api/clusters";
 import { ClusterCard } from "../components/clusters/ClusterCard";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
+import { Card } from "../components/ui/Card";
+import { Skeleton } from "../components/ui/Skeleton";
 import type { ClusterStatus } from "../types/cluster";
 import { cn } from "../lib/cn";
 
@@ -45,12 +47,21 @@ export function ClustersPage() {
         actions={<StatusFilterBar active={activeStatus} onSelect={applyFilter} />}
       />
 
-      {isLoading ? <p className="section-label">Loading clusters</p> : null}
+      {isLoading ? <ClusterListSkeleton /> : null}
 
       {isError ? (
-        <p className="text-sm text-destructive">
-          Could not load clusters. Is the Nengok server running?
-        </p>
+        <Card padding="lg">
+          <p className="text-sm text-destructive">
+            Could not load clusters. Is the Nengok server running?
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Start it with{" "}
+            <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">
+              nengok dashboard
+            </code>{" "}
+            and reload this page.
+          </p>
+        </Card>
       ) : null}
 
       {!isLoading && !isError && clusters.length === 0 ? (
@@ -92,6 +103,30 @@ function StatusFilterBar({
         </button>
       ))}
     </div>
+  );
+}
+
+function ClusterListSkeleton() {
+  return (
+    <ul className="space-y-3">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <li key={index}>
+          <Card>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+              <Skeleton className="h-8 w-16" />
+            </div>
+          </Card>
+        </li>
+      ))}
+    </ul>
   );
 }
 
