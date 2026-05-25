@@ -10,6 +10,7 @@ import { ExperimentTable } from "../components/clusters/ExperimentTable";
 import { PromptDiff } from "../components/clusters/PromptDiff";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+import { Skeleton } from "../components/ui/Skeleton";
 import type { ApprovalDecision } from "../types/approval";
 
 export function ClusterDetailPage() {
@@ -42,10 +43,40 @@ export function ClusterDetailPage() {
     },
   });
 
-  if (!cluster.data) {
+  if (cluster.isLoading) {
+    return <ClusterDetailSkeleton />;
+  }
+
+  if (cluster.isError || !cluster.data) {
     return (
-      <div className="mx-auto max-w-7xl p-8">
-        <p className="section-label">Loading cluster</p>
+      <div className="p-8 animate-in fade-in duration-300">
+        <PageHeader
+          title="Cluster"
+          actions={
+            <Link
+              to="/clusters"
+              className="entity-id rounded-md border border-border px-2 py-1 hover:bg-muted"
+            >
+              Back
+            </Link>
+          }
+        />
+        <Card padding="lg">
+          <p className="text-sm text-destructive">
+            Could not load this cluster. It may have been removed, or the Nengok server is offline.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Return to the{" "}
+            <Link to="/clusters" className="text-primary hover:underline">
+              clusters list
+            </Link>{" "}
+            or restart the server with{" "}
+            <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">
+              nengok dashboard
+            </code>
+            .
+          </p>
+        </Card>
       </div>
     );
   }
@@ -117,6 +148,42 @@ export function ClusterDetailPage() {
             </div>
           </div>
         </Card>
+      </section>
+    </div>
+  );
+}
+
+function ClusterDetailSkeleton() {
+  return (
+    <div className="p-8 animate-in fade-in duration-300">
+      <div className="mb-7 flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <Skeleton className="h-8 w-24" />
+      </div>
+      <section className="space-y-6">
+        <Card padding="lg">
+          <Skeleton className="mb-3 h-3 w-32" />
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-11/12" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        </Card>
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-24" />
+          <Card padding="md">
+            <Skeleton className="h-24 w-full" />
+          </Card>
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-3 w-32" />
+          <Card padding="md">
+            <Skeleton className="h-32 w-full" />
+          </Card>
+        </div>
       </section>
     </div>
   );
