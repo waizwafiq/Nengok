@@ -36,6 +36,14 @@ class StateStore:
         schema = resources.files("nengok.state").joinpath("schema.sql").read_text(encoding="utf-8")
         with self._connect() as conn:
             conn.executescript(schema)
+            self._migrate_cluster_columns(conn)
+
+    @staticmethod
+    def _migrate_cluster_columns(conn: sqlite3.Connection) -> None:
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(clusters)").fetchall()}
+        for column in ("first_seen", "diagnosed_at"):
+            if column not in existing:
+                conn.execute(f"ALTER TABLE clusters ADD COLUMN {column} TEXT")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -67,20 +75,27 @@ class StateStore:
                 new.append(anomaly)
         return new
 
-    def upsert_cluster(self, cluster: Cluster) -> None:
+    def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
+        first_seen_iso = first_seen.isoformat() if first_seen else cluster.created_at.isoformat()
+        diagnosed_at_iso = (
+            cluster.updated_at.isoformat() if cluster.status is ClusterStatus.DIAGNOSED else None
+        )
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO clusters
-                  (cluster_id, name, description, status, hypothesis_json, member_spans_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  (cluster_id, name, description, status, hypothesis_json, member_spans_json,
+                   created_at, updated_at, first_seen, diagnosed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cluster_id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
                     status = excluded.status,
                     hypothesis_json = excluded.hypothesis_json,
                     member_spans_json = excluded.member_spans_json,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    first_seen = COALESCE(clusters.first_seen, excluded.first_seen),
+                    diagnosed_at = COALESCE(clusters.diagnosed_at, excluded.diagnosed_at)
                 """,
                 (
                     cluster.cluster_id,
@@ -91,15 +106,28 @@ class StateStore:
                     json.dumps(cluster.member_span_ids),
                     cluster.created_at.isoformat(),
                     cluster.updated_at.isoformat(),
+                    first_seen_iso,
+                    diagnosed_at_iso,
                 ),
             )
 
     def mark_status(self, cluster_id: str, status: ClusterStatus) -> None:
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE clusters SET status = ?, updated_at = ? WHERE cluster_id = ?",
-                (status.value, datetime.now(UTC).isoformat(), cluster_id),
-            )
+            if status is ClusterStatus.DIAGNOSED:
+                conn.execute(
+                    """
+                    UPDATE clusters
+                    SET status = ?, updated_at = ?, diagnosed_at = COALESCE(diagnosed_at, ?)
+                    WHERE cluster_id = ?
+                    """,
+                    (status.value, now, now, cluster_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE clusters SET status = ?, updated_at = ? WHERE cluster_id = ?",
+                    (status.value, now, cluster_id),
+                )
 
     def list_clusters(self, *, status: ClusterStatus | None = None) -> list[dict]:
         query = "SELECT * FROM clusters"

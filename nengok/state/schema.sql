@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS clusters (
     hypothesis_json   TEXT,
     member_spans_json TEXT NOT NULL,
     created_at        TEXT NOT NULL,
-    updated_at        TEXT NOT NULL
+    updated_at        TEXT NOT NULL,
+    first_seen        TEXT,
+    diagnosed_at      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS clusters_status_idx ON clusters (status);
