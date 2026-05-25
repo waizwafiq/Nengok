@@ -124,23 +124,29 @@ Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for 
 
 ### 5. Generate traces with the sample agent
 
-In a new terminal with the venv activated, run the Travel Planner demo a few times with all failure modes injected:
+In a new terminal with the venv activated, run the seed helper to fire several Travel Planner runs with every failure mode injected:
 
 **Windows:**
 
 ```bat
 .venv\Scripts\activate
-python -m sample_agent.agent --inject all
+python -m sample_agent.seed --count 5
 ```
 
 **macOS / Linux:**
 
 ```bash
 source .venv/bin/activate
-python -m sample_agent.agent --inject all
+python -m sample_agent.seed --count 5
 ```
 
-Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation flips the mock tool outputs into their broken shapes, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
+`sample_agent.seed` rotates through a small set of queries (so the clusters look like real traffic rather than identical replays), turns on all three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout), and prints the resulting Phoenix project URL when it finishes. The clusterer needs roughly three anomalous traces before it can name a pattern, so `--count 5` is the floor; bump it higher if you want denser clusters. Pass `--inject flights|weather|hotels|none` to scope the failure modes, or `--query "..."` to pin every run to one prompt.
+
+If you want a single one-shot run with no batching, the underlying agent still works directly:
+
+```bash
+python -m sample_agent.agent --inject all
+```
 
 `build_itinerary` now invokes Gemini via `google-genai`, so `phoenix.otel.register(auto_instrument=True)` has a real LLM call to wrap and the `openinference-instrumentation-google-genai` package emits spans on every run. Each invocation creates or updates the `travel-planner-agent` project in Phoenix, and `nengok run` against that project should pull anomalous spans without 404ing.
 
