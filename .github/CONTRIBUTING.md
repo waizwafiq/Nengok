@@ -42,7 +42,7 @@ pip install --user uv
 python -m uv python install 3.12
 python -m uv venv --seed --python 3.12
 .venv\Scripts\activate
-python -m uv pip install -e ".[dev,phoenix]"
+python -m uv pip install -e ".[dev,phoenix,gemini]"
 ```
 
 **macOS / Linux:**
@@ -52,7 +52,7 @@ pip install --user uv
 python -m uv python install 3.12
 python -m uv venv --seed --python 3.12
 source .venv/bin/activate
-python -m uv pip install -e ".[dev,phoenix]"
+python -m uv pip install -e ".[dev,phoenix,gemini]"
 ```
 
 If `uv` is not on your PATH after `pip install --user uv`, keep invoking it as `python -m uv ...` or run `python -m uv python update-shell` once.
@@ -68,7 +68,7 @@ Needs Python 3.11+ already installed and on your PATH. Cold install: 2 to 5 minu
 ```bat
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e ".[dev,phoenix]"
+pip install -e ".[dev,phoenix,gemini]"
 ```
 
 **macOS / Linux:**
@@ -76,10 +76,10 @@ pip install -e ".[dev,phoenix]"
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev,phoenix]"
+pip install -e ".[dev,phoenix,gemini]"
 ```
 
-You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`) and the Phoenix client. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it.
+You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`), the Phoenix client, the Gemini SDK, and the OpenInference instrumentor that wraps it. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it. Skip the `gemini` extra only if you never run the sample agent; without it `_maybe_register_phoenix_tracing` configures a Phoenix project but the genai call emits no spans, so the `travel-planner-agent` project never gets created and `nengok run` 404s in step 6.
 
 The editable install also runs `npm install && vite build` in `frontend/` via a hatchling build hook so the dashboard works out of the box. This needs Node 22+ on your PATH and adds roughly 30 seconds on a cold install. If you don't have Node or only plan to work on Python, set `NENGOK_SKIP_FRONTEND_BUILD=1` before `pip install` and the hook is a no-op. In that case, `nengok dashboard` still serves the API but `/` returns a JSON hint instead of the UI until you build the frontend manually.
 
