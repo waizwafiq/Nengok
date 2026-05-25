@@ -5,6 +5,7 @@ import { fetchArtifacts } from "../api/artifacts";
 import { submitApproval } from "../api/approvals";
 import { StatusBadge } from "../components/StatusBadge";
 import { ExperimentTable } from "../components/clusters/ExperimentTable";
+import { PromptDiff } from "../components/clusters/PromptDiff";
 import type { ApprovalDecision } from "../types/approval";
 
 export function ClusterDetailPage() {
@@ -54,13 +55,11 @@ export function ClusterDetailPage() {
         </pre>
       </section>
 
-      <section className="pane p-5 space-y-3">
+      <section className="space-y-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
-          Proposed prompt
+          Prompt diff
         </h2>
-        <pre className="text-xs whitespace-pre-wrap bg-neutral-50 p-3 rounded-md">
-          {artifacts.data?.prompt ?? "No prompt artifact yet."}
-        </pre>
+        <PromptDiff prompt={artifacts.data?.prompt ?? null} />
       </section>
 
       <section className="space-y-3">
