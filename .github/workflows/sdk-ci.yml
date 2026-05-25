@@ -9,12 +9,17 @@ on:
       - "pyproject.toml"
       - ".github/workflows/sdk-ci.yml"
   push:
-    branches: [main]
+    branches-ignore:
+      - "docs/**"
     paths:
       - "nengok/**"
       - "tests/**"
       - "pyproject.toml"
       - ".github/workflows/sdk-ci.yml"
+
+concurrency:
+  group: sdk-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
