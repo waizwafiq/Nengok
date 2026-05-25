@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { StatusBadge } from "../StatusBadge";
+import { Card } from "../ui/Card";
 import type { Cluster } from "../../types/cluster";
 
 interface Props {
@@ -9,33 +11,36 @@ interface Props {
 export function ClusterCard({ cluster }: Props) {
   const memberCount = parseMemberCount(cluster.member_spans_json);
   return (
-    <article className="pane p-4 flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <Link
-            to={`/clusters/${cluster.cluster_id}`}
-            className="font-medium text-neutral-900 hover:text-brand-primary truncate"
-          >
-            {cluster.name}
-          </Link>
-          <StatusBadge status={cluster.status} />
+    <Card className="transition-colors hover:ring-primary/40">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/clusters/${cluster.cluster_id}`}
+              className="truncate text-sm font-medium text-foreground hover:text-primary"
+            >
+              {cluster.name}
+            </Link>
+            <StatusBadge status={cluster.status} />
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{cluster.description}</p>
+          <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="entity-id">
+              {memberCount} member span{memberCount === 1 ? "" : "s"}
+            </span>
+            <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+            <span>Updated {formatTimestamp(cluster.updated_at)}</span>
+          </div>
         </div>
-        <p className="text-xs text-neutral-500 mt-1 line-clamp-2">{cluster.description}</p>
-        <div className="text-xs text-neutral-500 mt-2 flex gap-3">
-          <span>
-            {memberCount} member span{memberCount === 1 ? "" : "s"}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>Updated {formatTimestamp(cluster.updated_at)}</span>
-        </div>
+        <Link
+          to={`/clusters/${cluster.cluster_id}`}
+          className="flex h-8 shrink-0 items-center gap-1 self-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+        >
+          View
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
-      <Link
-        to={`/clusters/${cluster.cluster_id}`}
-        className="shrink-0 self-center text-xs px-3 py-1.5 rounded-md border border-neutral-300 text-neutral-700 hover:bg-neutral-100"
-      >
-        View
-      </Link>
-    </article>
+    </Card>
   );
 }
 

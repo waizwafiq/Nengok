@@ -11,7 +11,7 @@ export function DashboardLayout() {
 
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar />
-        <div className="flex-1 overflow-y-auto rounded-tl-3xl border-t border-l border-border bg-background animate-in fade-in duration-300">
+        <div className="flex-1 overflow-y-auto rounded-tl-xl border-t border-l border-border bg-background animate-in fade-in duration-300">
           <Outlet />
         </div>
       </main>

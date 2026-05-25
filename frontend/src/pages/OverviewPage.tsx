@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchDashboardOverview } from "../api/dashboard";
 import { fetchClusters } from "../api/clusters";
+import { PageHeader } from "../components/layout/PageHeader";
+import { Card } from "../components/ui/Card";
 
 export function OverviewPage() {
   const overview = useQuery({
@@ -15,14 +18,25 @@ export function OverviewPage() {
   });
 
   if (overview.isLoading) {
-    return <p className="text-sm text-neutral-500">Loading overview…</p>;
+    return (
+      <div className="mx-auto max-w-7xl p-8">
+        <PageHeader
+          title="Overview"
+          breadcrumb={[{ label: "Workspace" }, { label: "Overview" }]}
+        />
+        <p className="section-label">Loading dashboard metrics</p>
+      </div>
+    );
   }
 
   if (overview.isError || !overview.data) {
     return (
-      <p className="text-sm text-status-escalated">
-        Could not load dashboard metrics. Is the Nengok server running?
-      </p>
+      <div className="mx-auto max-w-7xl p-8">
+        <PageHeader title="Overview" />
+        <p className="text-sm text-destructive">
+          Could not load dashboard metrics. Is the Nengok server running?
+        </p>
+      </div>
     );
   }
 
@@ -31,24 +45,27 @@ export function OverviewPage() {
   const totalClusters = clusters.data?.length ?? 0;
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Snapshot of every failure cluster Nengok has detected in this project.
-        </p>
-      </header>
+    <div className="p-8 animate-in fade-in duration-300">
+      <PageHeader
+        title="Portfolio overview"
+        description="Every failure cluster Nengok has detected in this project, plus the ones already fixed."
+        breadcrumb={[{ label: "Workspace" }, { label: "Overview" }]}
+      />
 
       {totalClusters === 0 ? <EmptyStateBanner /> : null}
 
-      <section className="grid grid-cols-4 gap-4">
-        <Stat label="Open clusters" value={counts.open + counts.diagnosed} accent="open" />
-        <Stat label="Fix proposed" value={counts.fix_proposed} accent="diagnosed" />
-        <Stat label="Approved" value={counts.approved} accent="fix" />
-        <Stat label="Escalated" value={counts.escalated} accent="escalated" />
+      <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatTile label="Open clusters" value={counts.open + counts.diagnosed} accent="open" />
+        <StatTile label="Fix proposed" value={counts.fix_proposed} accent="diagnosed" />
+        <StatTile label="Approved" value={counts.approved} accent="fix" />
+        <StatTile label="Escalated" value={counts.escalated} accent="escalated" />
       </section>
 
-      <section className="grid grid-cols-3 gap-4">
+      <section className="mb-3 flex items-center justify-between">
+        <h2 className="section-label">Health</h2>
+      </section>
+
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <MetricCard
           label="Mean time to detect"
           value={formatDuration(data.mttd_seconds)}
@@ -62,7 +79,7 @@ export function OverviewPage() {
         <MetricCard
           label="Close rate"
           value={formatPercent(data.close_rate)}
-          hint="Approved over open + diagnosed + escalated + approved"
+          hint="Approved over active total"
         />
         <MetricCard
           label="Regression tests"
@@ -72,14 +89,14 @@ export function OverviewPage() {
         <MetricCard
           label="Fix pass rate (30d)"
           value={formatPercent(data.fix_pass_rate_30d)}
-          hint="Average fix-prompt pass rate across recent experiments"
+          hint="Average across recent experiments"
         />
       </section>
     </div>
   );
 }
 
-function Stat({
+function StatTile({
   label,
   value,
   accent,
@@ -96,37 +113,44 @@ function Stat({
   }[accent];
 
   return (
-    <div className="pane p-4">
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`mt-2 text-3xl font-semibold ${accentClass}`}>{value}</div>
-    </div>
+    <Card>
+      <div className="section-label">{label}</div>
+      <div className={`mt-2 text-3xl font-semibold tabular-nums ${accentClass}`}>{value}</div>
+    </Card>
   );
 }
 
 function MetricCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="pane p-4 space-y-1">
-      <div className="text-xs uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="text-2xl font-semibold text-neutral-900">{value}</div>
-      <div className="text-xs text-neutral-500">{hint}</div>
-    </div>
+    <Card>
+      <div className="section-label">{label}</div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+    </Card>
   );
 }
 
 function EmptyStateBanner() {
   return (
-    <div className="pane p-4 border border-dashed border-neutral-300 bg-neutral-50">
-      <p className="text-sm text-neutral-700">
-        No clusters yet. Seed Phoenix with{" "}
-        <code className="font-mono text-xs">python -m sample_agent.agent --inject all</code>, then
-        run <code className="font-mono text-xs">nengok run</code>.
-      </p>
-      <Link
-        to="/clusters"
-        className="mt-2 inline-block text-xs text-brand-primary hover:underline"
-      >
-        Open clusters view
-      </Link>
+    <div className="mb-6 flex items-start gap-3 rounded-xl border border-dashed border-border bg-card p-4">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <Sparkles className="h-4 w-4" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm text-foreground">
+          No clusters yet. Seed Phoenix with{" "}
+          <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">
+            python -m sample_agent.agent --inject all
+          </code>
+          , then run <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code>.
+        </p>
+        <Link
+          to="/clusters"
+          className="mt-1 inline-block text-xs font-medium text-primary hover:underline"
+        >
+          Open clusters view
+        </Link>
+      </div>
     </div>
   );
 }

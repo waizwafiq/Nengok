@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { fetchClusters } from "../api/clusters";
 import { ClusterCard } from "../components/clusters/ClusterCard";
+import { PageHeader } from "../components/layout/PageHeader";
 import type { ClusterStatus } from "../types/cluster";
+import { cn } from "../lib/cn";
 
 const STATUS_FILTERS: { value: ClusterStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -34,16 +36,18 @@ export function ClustersPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Clusters</h1>
-        <StatusFilterBar active={activeStatus} onSelect={applyFilter} />
-      </header>
+    <div className="p-8 animate-in fade-in duration-300">
+      <PageHeader
+        title="Clusters"
+        description="Each group is a named failure pattern detected by the observer."
+        breadcrumb={[{ label: "Workspace" }, { label: "Clusters" }]}
+        actions={<StatusFilterBar active={activeStatus} onSelect={applyFilter} />}
+      />
 
-      {isLoading ? <p className="text-sm text-neutral-500">Loading clusters…</p> : null}
+      {isLoading ? <p className="section-label">Loading clusters</p> : null}
 
       {isError ? (
-        <p className="text-sm text-status-escalated">
+        <p className="text-sm text-destructive">
           Could not load clusters. Is the Nengok server running?
         </p>
       ) : null}
@@ -52,7 +56,7 @@ export function ClustersPage() {
         <EmptyState filtered={activeStatus !== "all"} />
       ) : null}
 
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {clusters.map((cluster) => (
           <li key={cluster.cluster_id}>
             <ClusterCard cluster={cluster} />
@@ -76,12 +80,12 @@ function StatusFilterBar({
         <button
           key={option.value}
           onClick={() => onSelect(option.value)}
-          className={[
-            "px-2.5 py-1 text-xs rounded-md border transition-colors",
+          className={cn(
+            "h-7 px-2.5 text-xs font-medium rounded-md border transition-colors",
             option.value === active
-              ? "border-brand-primary bg-brand-primary/10 text-brand-primary"
-              : "border-neutral-200 text-neutral-600 hover:bg-neutral-100",
-          ].join(" ")}
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
         >
           {option.label}
         </button>
@@ -93,15 +97,21 @@ function StatusFilterBar({
 function EmptyState({ filtered }: { filtered: boolean }) {
   if (filtered) {
     return (
-      <p className="text-sm text-neutral-500">
-        No clusters match this filter. Try a different status.
-      </p>
+      <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          No clusters match this filter. Try a different status.
+        </p>
+      </div>
     );
   }
   return (
-    <p className="text-sm text-neutral-500">
-      No clusters yet. Run <code className="font-mono">nengok run</code> to detect failures.
-    </p>
+    <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        No clusters yet. Run{" "}
+        <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code> to
+        detect failures.
+      </p>
+    </div>
   );
 }
 
