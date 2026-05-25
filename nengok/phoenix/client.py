@@ -244,7 +244,7 @@ class PhoenixWrapper:
                 "Bundle a golden_dataset/ directory with the SDK or override "
                 "the path before calling run_golden_comparison."
             )
-        parsed = json.loads(SAMPLE_GOLDEN_PATH.read_text(encoding="utf-8"))
+        parsed: dict[str, Any] = json.loads(SAMPLE_GOLDEN_PATH.read_text(encoding="utf-8"))
         self._golden_cache = parsed
         return parsed
 
