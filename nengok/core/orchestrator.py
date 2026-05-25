@@ -115,7 +115,10 @@ class Orchestrator:
                     clusters.append(
                         raw.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
                     )
-                    self._state.upsert_cluster(clusters[-1])
+                    self._state.upsert_cluster(
+                        clusters[-1],
+                        first_seen=_earliest_span_time(clusters[-1], new_anomalies),
+                    )
                 set_attributes(diagnoser_span, {"nengok.diagnoser.cluster_count": len(clusters)})
                 logger.info("Diagnoser: %d clusters with hypotheses", len(clusters))
 
@@ -214,6 +217,12 @@ def _signal_counts_by_cluster(
                 counts[signal.value] = counts.get(signal.value, 0) + 1
         out[cluster.cluster_id] = counts
     return out
+
+
+def _earliest_span_time(cluster: Cluster, anomalies: list[AnomalousSpan]) -> datetime | None:
+    by_span_id = {a.span.span_id: a.span.started_at for a in anomalies}
+    times = [t for span_id in cluster.member_span_ids if (t := by_span_id.get(span_id)) is not None]
+    return min(times) if times else None
 
 
 def _cluster_span_attrs(cluster: Cluster, signal_counts: dict[str, dict[str, int]]) -> dict[str, object]:

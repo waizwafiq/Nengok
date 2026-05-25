@@ -107,15 +107,15 @@ class _AnomalyFilter:
 
 class _State:
     def __init__(self) -> None:
-        self.upserts: list[Cluster] = []
+        self.upserts: list[tuple[Cluster, datetime | None]] = []
         self.statuses: list[tuple[str, ClusterStatus]] = []
         self.experiments: list[tuple[str, ExperimentResult]] = []
 
     def deduplicate(self, anomalies: list[AnomalousSpan]) -> list[AnomalousSpan]:
         return anomalies
 
-    def upsert_cluster(self, cluster: Cluster) -> None:
-        self.upserts.append(cluster)
+    def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
+        self.upserts.append((cluster, first_seen))
 
     def mark_status(self, cluster_id: str, status: ClusterStatus) -> None:
         self.statuses.append((cluster_id, status))
