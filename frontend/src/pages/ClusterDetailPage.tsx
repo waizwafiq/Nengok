@@ -75,14 +75,14 @@ export function ClusterDetailPage() {
           Approve
         </Button>
         <Button
-          variant="danger"
+          variant="destructive"
           onClick={() => decide.mutate("rejected")}
           disabled={decide.isPending}
         >
           Reject
         </Button>
         <Button
-          variant="neutral"
+          variant="outline"
           onClick={() => decide.mutate("dismissed")}
           disabled={decide.isPending}
         >
