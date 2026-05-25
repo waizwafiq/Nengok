@@ -34,7 +34,7 @@ export function Header() {
             src={logoFull}
             alt="Nengok"
             className={cn(
-              "absolute left-0 top-1/2 h-7 -translate-y-1/2",
+              "absolute left-0 top-1/2 h-14 -translate-y-1/2",
               COLLAPSE_TRANSITION,
               sidebarCollapsed ? "opacity-0" : "opacity-100",
             )}
