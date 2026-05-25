@@ -1,7 +1,7 @@
 {
   "name": "travel_planner_golden",
   "description": "Curated golden cases for the Travel Planner demo agent. Used by the Verifier gate to ensure proposed fixes do not regress baseline quality.",
-  "version": 1,
+  "version": 2,
   "cases": [
     {
       "case_id": "golden-001",
@@ -40,6 +40,61 @@
       },
       "metadata": {
         "scenario": "single-tool-call"
+      }
+    },
+    {
+      "case_id": "golden-004",
+      "input": {
+        "query": "Book a 1-day stopover in Doha from KL with one hotel night"
+      },
+      "expected": {
+        "contains": "Doha",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "short-stopover-single-night"
+      }
+    },
+    {
+      "case_id": "golden-005",
+      "input": {
+        "query": "Plan a 3-day trip from Sydney to Auckland and show the departure time for the outbound flight"
+      },
+      "expected": {
+        "contains": "Auckland",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "departure-time-explicit-ask",
+        "probes": "flights_schema_drift"
+      }
+    },
+    {
+      "case_id": "golden-006",
+      "input": {
+        "query": "I am flying from KL to Reykjavik in January, suggest clothing based on the forecast"
+      },
+      "expected": {
+        "contains": "Reykjavik",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "clothing-recommendation-from-forecast",
+        "probes": "weather_unit_mismatch"
+      }
+    },
+    {
+      "case_id": "golden-007",
+      "input": {
+        "query": "Plan a 4-day Kyoto trip from KL; name every hotel you recommend so I can verify it exists"
+      },
+      "expected": {
+        "contains": "Kyoto",
+        "must_call_tools": ["flights", "weather", "hotels"]
+      },
+      "metadata": {
+        "scenario": "named-hotel-verification",
+        "probes": "hotels_timeout_hallucination"
       }
     }
   ]
