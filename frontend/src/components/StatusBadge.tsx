@@ -1,13 +1,14 @@
+import { Badge } from "./ui/Badge";
 import type { ClusterStatus } from "../types/cluster";
 
-const STYLES: Record<ClusterStatus, string> = {
-  open: "bg-status-open/10 text-status-open border-status-open/30",
-  diagnosed: "bg-status-diagnosed/10 text-status-diagnosed border-status-diagnosed/30",
-  fix_proposed: "bg-status-fix/10 text-status-fix border-status-fix/30",
-  approved: "bg-status-fix/10 text-status-fix border-status-fix/30",
-  rejected: "bg-status-escalated/10 text-status-escalated border-status-escalated/30",
-  dismissed: "bg-status-dismissed/10 text-status-dismissed border-status-dismissed/30",
-  escalated: "bg-status-escalated/10 text-status-escalated border-status-escalated/30",
+const TONE: Record<ClusterStatus, Parameters<typeof Badge>[0]["tone"]> = {
+  open: "open",
+  diagnosed: "diagnosed",
+  fix_proposed: "fix",
+  approved: "fix",
+  rejected: "escalated",
+  dismissed: "dismissed",
+  escalated: "escalated",
 };
 
 const LABELS: Record<ClusterStatus, string> = {
@@ -21,11 +22,5 @@ const LABELS: Record<ClusterStatus, string> = {
 };
 
 export function StatusBadge({ status }: { status: ClusterStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STYLES[status]}`}
-    >
-      {LABELS[status]}
-    </span>
-  );
+  return <Badge tone={TONE[status]}>{LABELS[status]}</Badge>;
 }

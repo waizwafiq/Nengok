@@ -107,17 +107,21 @@ class _AnomalyFilter:
 
 class _State:
     def __init__(self) -> None:
-        self.upserts: list[Cluster] = []
+        self.upserts: list[tuple[Cluster, datetime | None]] = []
         self.statuses: list[tuple[str, ClusterStatus]] = []
+        self.experiments: list[tuple[str, ExperimentResult]] = []
 
     def deduplicate(self, anomalies: list[AnomalousSpan]) -> list[AnomalousSpan]:
         return anomalies
 
-    def upsert_cluster(self, cluster: Cluster) -> None:
-        self.upserts.append(cluster)
+    def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
+        self.upserts.append((cluster, first_seen))
 
     def mark_status(self, cluster_id: str, status: ClusterStatus) -> None:
         self.statuses.append((cluster_id, status))
+
+    def record_experiment(self, *, cluster_id: str, result: ExperimentResult) -> None:
+        self.experiments.append((cluster_id, result))
 
 
 class _Clusterer:
@@ -349,6 +353,10 @@ def test_full_pass_emits_each_stage_with_cluster_attributes(
     assert result.fixes_proposed == 1
     assert len(writer.writes) == 1
     assert (cluster.cluster_id, ClusterStatus.FIX_PROPOSED) in state.statuses
+    assert len(state.experiments) == 1
+    persisted_cluster_id, persisted_result = state.experiments[0]
+    assert persisted_cluster_id == cluster.cluster_id
+    assert persisted_result.experiment_id == "exp-1"
 
 
 def test_verifier_records_failure_outcome_and_escalation(

@@ -7,10 +7,15 @@ on:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
   push:
-    branches: [main]
+    branches-ignore:
+      - "docs/**"
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:

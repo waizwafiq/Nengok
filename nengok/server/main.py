@@ -28,7 +28,7 @@ from starlette.types import Scope
 
 from nengok import __version__
 from nengok.config import NengokConfig
-from nengok.server.routes import approvals, artifacts, clusters, experiments
+from nengok.server.routes import approvals, artifacts, clusters, dashboard, experiments
 from nengok.utils.logging import get_logger
 
 _PACKAGE_STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -85,6 +85,7 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     app.include_router(experiments.router, prefix="/api/v1")
     app.include_router(approvals.router, prefix="/api/v1")
     app.include_router(artifacts.router, prefix="/api/v1")
+    app.include_router(dashboard.router, prefix="/api/v1")
 
     @app.get("/api/v1/health")
     def health() -> dict[str, str]:

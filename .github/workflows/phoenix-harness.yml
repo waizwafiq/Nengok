@@ -8,7 +8,19 @@ on:
       - "phoenix_harness/**"
       - "pyproject.toml"
       - ".github/workflows/phoenix-harness.yml"
+  push:
+    branches-ignore:
+      - "docs/**"
+    paths:
+      - "nengok/phoenix/**"
+      - "phoenix_harness/**"
+      - "pyproject.toml"
+      - ".github/workflows/phoenix-harness.yml"
   workflow_dispatch:
+
+concurrency:
+  group: phoenix-harness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
