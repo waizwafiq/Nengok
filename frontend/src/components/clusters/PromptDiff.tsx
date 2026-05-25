@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { Card } from "../ui/Card";
 
 interface Props {
   prompt: string | null;
@@ -28,14 +29,23 @@ export function PromptDiff({ prompt }: Props) {
   const parsed = useMemo(() => parsePromptArtifact(prompt), [prompt]);
 
   if (!parsed) {
-    return <p className="text-sm text-neutral-500">No prompt artifact yet.</p>;
+    return (
+      <Card padding="md" className="border border-dashed border-border bg-card text-center">
+        <p className="text-sm text-muted-foreground">No prompt artifact yet.</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          The fixer writes one once a candidate prompt has been proposed.
+        </p>
+      </Card>
+    );
   }
 
   if (parsed.baseline === parsed.proposed) {
     return (
-      <p className="text-sm text-neutral-500">
-        The proposed prompt is identical to the baseline.
-      </p>
+      <Card padding="md" className="border border-dashed border-border bg-card text-center">
+        <p className="text-sm text-muted-foreground">
+          The proposed prompt is identical to the baseline.
+        </p>
+      </Card>
     );
   }
 
