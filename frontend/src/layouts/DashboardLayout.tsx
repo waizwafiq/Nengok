@@ -1,11 +1,28 @@
 import { Outlet } from "react-router-dom";
 import { Header } from "../components/layout/Header";
 import { TopBar } from "../components/layout/TopBar";
+import { LayoutProvider } from "../components/layout/LayoutContext";
+import { useLayout } from "../components/layout/useLayout";
+import { cn } from "../lib/cn";
 
 export function DashboardLayout() {
   return (
+    <LayoutProvider>
+      <Shell />
+    </LayoutProvider>
+  );
+}
+
+function Shell() {
+  const { sidebarCollapsed } = useLayout();
+  return (
     <div className="relative flex h-screen overflow-hidden bg-sidebar text-sm">
-      <aside className="flex w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+      <aside
+        className={cn(
+          "flex shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-out",
+          sidebarCollapsed ? "w-16" : "w-60",
+        )}
+      >
         <Header />
       </aside>
 
