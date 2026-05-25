@@ -184,9 +184,17 @@ Pass `--no-browser` to skip the auto-open.
 
 If `/` returns a JSON hint instead of the UI, the install either skipped the frontend build (look for `NENGOK_SKIP_FRONTEND_BUILD=1` in your env) or `npm` wasn't on PATH. Run `cd frontend && npm install && npm run build`, then restart `nengok dashboard`.
 
-#### Frontend development with HMR
+#### Frontend development with HMR (recommended)
 
-When you're iterating on `frontend/` source, run the Vite dev server in a separate terminal so changes hot-reload. The pre-built bundle in `nengok/server/static/` stays put; you just visit a different URL.
+Use this loop when you're editing anything under `frontend/`: run the Vite dev server in one terminal and the FastAPI server in another. Vite hot-reloads on save, proxies `/api` calls to the FastAPI side, and leaves the pre-built bundle in `nengok/server/static/` untouched.
+
+Terminal A, FastAPI server:
+
+```bash
+nengok dashboard --no-browser
+```
+
+Terminal B, Vite dev server.
 
 **Windows:**
 
@@ -204,7 +212,20 @@ npm install
 npm run dev
 ```
 
-Then visit <http://localhost:5173>. Vite proxies `/api` calls back to the FastAPI server, so keep `nengok dashboard --no-browser` running in another terminal.
+Then open <http://localhost:5173>. Edits to any `.tsx` or `.ts` file show up on save.
+
+#### Seeing frontend changes through `nengok dashboard`
+
+`nengok dashboard` serves the bundle from `nengok/server/static/`, which is populated once by the hatch build hook in step 2 and does not refresh when you edit source. If you want to verify a change through the `8765` port instead of the Vite dev server, rebuild and reinstall:
+
+```bash
+cd frontend
+npm run build
+cd ..
+pip install -e . --no-deps
+```
+
+The `pip install -e . --no-deps` re-fires the hatch hook so the new `dist/` copies into `nengok/server/static/`. Restart `nengok dashboard` afterwards. For day-to-day iteration the HMR loop above is faster; reach for the rebuild only when you need to sanity-check the production bundle.
 
 ## Branch Naming
 
