@@ -21,6 +21,7 @@ from sample_agent.tools import failure_modes, flights, hotels, weather
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "travel_planner.md"
 DEFAULT_MODEL = "gemini-2.5-flash"
+PHOENIX_PROJECT_NAME = "travel-planner-agent"
 
 
 def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
@@ -142,7 +143,7 @@ def _maybe_register_phoenix_tracing() -> None:
             'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
         ) from exc
 
-    tracer_provider = register(project_name="travel-planner-agent", auto_instrument=True)
+    tracer_provider = register(project_name=PHOENIX_PROJECT_NAME, auto_instrument=True)
 
     # `auto_instrument=True` relies on package metadata to pick up
     # openinference-instrumentation-google-genai, which has been flaky when
