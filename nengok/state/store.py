@@ -182,6 +182,75 @@ class StateStore:
                 ),
             )
 
+    def dashboard_overview(self) -> dict:
+        """Aggregated metrics for the executive dashboard panel."""
+        with self._connect() as conn:
+            status_rows = conn.execute(
+                "SELECT status, COUNT(*) AS n FROM clusters GROUP BY status"
+            ).fetchall()
+            by_status: dict[str, int] = {row["status"]: row["n"] for row in status_rows}
+            approved = by_status.get(ClusterStatus.APPROVED.value, 0)
+            open_count = by_status.get(ClusterStatus.OPEN.value, 0)
+            diagnosed = by_status.get(ClusterStatus.DIAGNOSED.value, 0)
+            escalated = by_status.get(ClusterStatus.ESCALATED.value, 0)
+            active = approved + open_count + diagnosed + escalated
+            close_rate = approved / active if active else 0.0
+
+            mttd_row = conn.execute(
+                """
+                SELECT AVG(
+                    (julianday(diagnosed_at) - julianday(first_seen)) * 86400.0
+                ) AS seconds
+                FROM clusters
+                WHERE first_seen IS NOT NULL AND diagnosed_at IS NOT NULL
+                """
+            ).fetchone()
+            mttr_row = conn.execute(
+                """
+                SELECT AVG(
+                    (julianday(a.decided_at) - julianday(c.diagnosed_at)) * 86400.0
+                ) AS seconds
+                FROM clusters c
+                JOIN approvals a ON a.cluster_id = c.cluster_id
+                WHERE a.decision = 'approved' AND c.diagnosed_at IS NOT NULL
+                """
+            ).fetchone()
+
+            regression_row = conn.execute(
+                """
+                SELECT COALESCE(SUM(json_array_length(per_case_json)), 0) AS total
+                FROM experiments
+                WHERE row_id IN (
+                    SELECT MAX(row_id) FROM experiments GROUP BY cluster_id
+                )
+                """
+            ).fetchone()
+
+            pass_row = conn.execute(
+                """
+                SELECT AVG(fix_pass_rate) AS pass_rate
+                FROM experiments
+                WHERE created_at >= datetime('now', '-30 days')
+                """
+            ).fetchone()
+
+        return {
+            "cluster_counts": {
+                "open": open_count,
+                "diagnosed": diagnosed,
+                "fix_proposed": by_status.get(ClusterStatus.FIX_PROPOSED.value, 0),
+                "approved": approved,
+                "rejected": by_status.get(ClusterStatus.REJECTED.value, 0),
+                "dismissed": by_status.get(ClusterStatus.DISMISSED.value, 0),
+                "escalated": escalated,
+            },
+            "mttd_seconds": mttd_row["seconds"],
+            "mttr_seconds": mttr_row["seconds"],
+            "close_rate": close_rate,
+            "regression_test_count": int(regression_row["total"] or 0),
+            "fix_pass_rate_30d": pass_row["pass_rate"],
+        }
+
     def latest_experiment(self, cluster_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
