@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 interface BreadcrumbItem {
   label: string;
@@ -7,30 +7,22 @@ interface BreadcrumbItem {
 }
 
 interface Props {
-  icon?: ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   breadcrumb?: BreadcrumbItem[];
   actions?: ReactNode;
 }
 
-export function PageHeader({ icon: Icon, title, description, breadcrumb, actions }: Props) {
+export function PageHeader({ title, description, breadcrumb, actions }: Props) {
   return (
     <div className="mb-7">
       {breadcrumb && breadcrumb.length > 0 ? <Breadcrumb trail={breadcrumb} /> : null}
       <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          {Icon ? (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border bg-card text-primary">
-              <Icon className="h-5 w-5" />
-            </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+          {description ? (
+            <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">{description}</p>
           ) : null}
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
-            {description ? (
-              <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">{description}</p>
-            ) : null}
-          </div>
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
