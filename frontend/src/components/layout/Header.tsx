@@ -3,8 +3,8 @@ import { Activity, LayoutDashboard } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { useLayout } from "./useLayout";
-import logoFull from "../../assets/nengok-logo.png";
 import logoMark from "../../assets/nengok-logoonly.png";
+import wordmark from "../../assets/nengok-white.svg";
 
 const COLLAPSE_TRANSITION = "transition-all duration-200 ease-out";
 
@@ -19,24 +19,16 @@ export function Header() {
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <div className="flex h-14 items-center pl-4 pr-3">
-        <div className="relative flex h-20 w-24 shrink-0 items-center justify-start">
+        <div className="flex items-center">
+          <img src={logoMark} alt="Nengok" className="h-7 w-7 shrink-0" />
           <img
-            src={logoMark}
+            src={wordmark}
             alt=""
             aria-hidden="true"
             className={cn(
-              "absolute left-0 top-1/2 h-7 w-7 -translate-y-1/2",
+              "h-7 overflow-hidden",
               COLLAPSE_TRANSITION,
-              sidebarCollapsed ? "opacity-100" : "opacity-0",
-            )}
-          />
-          <img
-            src={logoFull}
-            alt="Nengok"
-            className={cn(
-              "absolute left-0 top-1/2 h-14 -translate-y-1/2",
-              COLLAPSE_TRANSITION,
-              sidebarCollapsed ? "opacity-0" : "opacity-100",
+              sidebarCollapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-40 opacity-100",
             )}
           />
         </div>
