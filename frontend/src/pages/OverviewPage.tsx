@@ -6,6 +6,7 @@ import { fetchClusters } from "../api/clusters";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
+import { Skeleton } from "../components/ui/Skeleton";
 
 export function OverviewPage() {
   useLayoutBreadcrumb([{ label: "Workspace" }, { label: "Overview" }]);
@@ -22,20 +23,54 @@ export function OverviewPage() {
 
   if (overview.isLoading) {
     return (
-      <div className="mx-auto max-w-7xl p-8">
-        <PageHeader title="Overview" />
-        <p className="section-label">Loading dashboard metrics</p>
+      <div className="p-8 animate-in fade-in duration-300">
+        <PageHeader
+          title="Portfolio overview"
+          description="Every failure cluster Nengok has detected in this project, plus the ones already fixed."
+        />
+        <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-8 w-16" />
+            </Card>
+          ))}
+        </section>
+        <section className="mb-3">
+          <Skeleton className="h-3 w-16" />
+        </section>
+        <section className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Card key={index}>
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="mt-3 h-7 w-20" />
+              <Skeleton className="mt-2 h-3 w-40" />
+            </Card>
+          ))}
+        </section>
       </div>
     );
   }
 
   if (overview.isError || !overview.data) {
     return (
-      <div className="mx-auto max-w-7xl p-8">
-        <PageHeader title="Overview" />
-        <p className="text-sm text-destructive">
-          Could not load dashboard metrics. Is the Nengok server running?
-        </p>
+      <div className="p-8 animate-in fade-in duration-300">
+        <PageHeader
+          title="Portfolio overview"
+          description="Every failure cluster Nengok has detected in this project, plus the ones already fixed."
+        />
+        <Card padding="lg">
+          <p className="text-sm text-destructive">
+            Could not load dashboard metrics. Is the Nengok server running?
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Start it with{" "}
+            <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">
+              nengok dashboard
+            </code>{" "}
+            and reload this page.
+          </p>
+        </Card>
       </div>
     );
   }
