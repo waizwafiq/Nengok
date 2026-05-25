@@ -20,13 +20,13 @@ export function Header() {
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <div className="flex h-14 items-center pl-4 pr-3">
         <div className="flex items-center">
-          <img src={logoMark} alt="Nengok" className="h-7 w-7 shrink-0" />
+          <img src={logoMark} alt="Nengok" className="block h-9 w-9 shrink-0" />
           <img
             src={wordmark}
             alt=""
             aria-hidden="true"
             className={cn(
-              "h-7 overflow-hidden",
+              "block h-9 w-auto overflow-hidden",
               COLLAPSE_TRANSITION,
               sidebarCollapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-40 opacity-100",
             )}
