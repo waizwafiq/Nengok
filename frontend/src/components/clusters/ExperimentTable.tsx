@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchLatestExperiment } from "../../api/experiments";
 import { Card } from "../ui/Card";
+import { Skeleton } from "../ui/Skeleton";
 import type { ExperimentCase, ExperimentSummary } from "../../types/experiment";
 
 interface Props {
@@ -24,23 +25,34 @@ export function ExperimentTable({ clusterId }: Props) {
   });
 
   if (query.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading experiment…</p>;
+    return <ExperimentTableSkeleton />;
   }
 
   if (query.isError) {
     return (
-      <p className="text-sm text-destructive">
-        Could not load the latest experiment for this cluster.
-      </p>
+      <Card padding="md">
+        <p className="text-sm text-destructive">
+          Could not load the latest experiment for this cluster.
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Re-run the cycle with{" "}
+          <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code> to
+          generate a fresh experiment.
+        </p>
+      </Card>
     );
   }
 
   const data = query.data;
   if (!data) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No experiment has been run for this cluster yet.
-      </p>
+      <Card padding="md" className="border border-dashed border-border bg-card text-center">
+        <p className="text-sm text-muted-foreground">No experiment has been run for this cluster yet.</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Trigger one with{" "}
+          <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code>.
+        </p>
+      </Card>
     );
   }
 
@@ -132,6 +144,28 @@ function EvaluatorCell({ value }: { value: boolean | number | string | undefined
     return <span>{Number.isInteger(value) ? value : value.toFixed(2)}</span>;
   }
   return <span>{value}</span>;
+}
+
+function ExperimentTableSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Card key={index} padding="sm">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="mt-2 h-5 w-12" />
+          </Card>
+        ))}
+      </div>
+      <Card padding="md">
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-4 w-full" />
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 function collectEvaluatorKeys(rows: ExperimentCase[]): string[] {
