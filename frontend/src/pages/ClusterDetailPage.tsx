@@ -4,6 +4,7 @@ import { fetchCluster } from "../api/clusters";
 import { fetchArtifacts } from "../api/artifacts";
 import { submitApproval } from "../api/approvals";
 import { StatusBadge } from "../components/StatusBadge";
+import { ExperimentTable } from "../components/clusters/ExperimentTable";
 import type { ApprovalDecision } from "../types/approval";
 
 export function ClusterDetailPage() {
@@ -60,6 +61,13 @@ export function ClusterDetailPage() {
         <pre className="text-xs whitespace-pre-wrap bg-neutral-50 p-3 rounded-md">
           {artifacts.data?.prompt ?? "No prompt artifact yet."}
         </pre>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-500">
+          Experiment results
+        </h2>
+        <ExperimentTable clusterId={clusterId} />
       </section>
 
       <section className="flex gap-2">
