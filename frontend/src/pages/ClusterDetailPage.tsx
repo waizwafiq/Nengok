@@ -6,6 +6,7 @@ import { submitApproval } from "../api/approvals";
 import { StatusBadge } from "../components/StatusBadge";
 import { ExperimentTable } from "../components/clusters/ExperimentTable";
 import { PromptDiff } from "../components/clusters/PromptDiff";
+import { Button } from "../components/ui/Button";
 import type { ApprovalDecision } from "../types/approval";
 
 export function ClusterDetailPage() {
@@ -70,27 +71,23 @@ export function ClusterDetailPage() {
       </section>
 
       <section className="flex gap-2">
-        <button
-          onClick={() => decide.mutate("approved")}
-          className="px-4 py-2 rounded-md bg-status-fix text-white text-sm hover:opacity-90"
-          disabled={decide.isPending}
-        >
+        <Button onClick={() => decide.mutate("approved")} disabled={decide.isPending}>
           Approve
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="danger"
           onClick={() => decide.mutate("rejected")}
-          className="px-4 py-2 rounded-md bg-status-escalated text-white text-sm hover:opacity-90"
           disabled={decide.isPending}
         >
           Reject
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="neutral"
           onClick={() => decide.mutate("dismissed")}
-          className="px-4 py-2 rounded-md border border-neutral-300 text-neutral-700 text-sm hover:bg-neutral-100"
           disabled={decide.isPending}
         >
           Dismiss
-        </button>
+        </Button>
       </section>
     </div>
   );
