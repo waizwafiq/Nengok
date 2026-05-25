@@ -3,10 +3,8 @@ import { Activity, LayoutDashboard, ScanEye } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
- * Sidebar header with the Nengok brand and primary nav.
- *
  * Owned by the layout shell so individual pages do not redraw the nav
- * on route changes. Add new top-level destinations here, not inside
+ * on route changes. Add new top-level destinations here, not in
  * DashboardLayout.
  */
 export function Header() {

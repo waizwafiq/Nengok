@@ -6,12 +6,6 @@ interface Props {
   cluster: Cluster;
 }
 
-/**
- * Summary card for a single failure cluster in list views.
- *
- * Shows name, status, member-span count, and last-updated stamp,
- * with a primary action to open the cluster detail page.
- */
 export function ClusterCard({ cluster }: Props) {
   const memberCount = parseMemberCount(cluster.member_spans_json);
   return (
