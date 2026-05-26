@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from nengok.config import NengokConfig
 from nengok.core.types import Cluster, RootCauseHypothesis, TraceSpan
 from nengok.phoenix.client import PhoenixWrapper
-from nengok.utils.gemini import call_gemini
+from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -117,6 +117,7 @@ class Hypothesizer:
             ),
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Hypothesizer",
+            retry_policy=RetryPolicy.from_config(self.config),
         )
 
 

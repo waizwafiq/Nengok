@@ -6,12 +6,34 @@ set of named exceptions that point the user at the env var or config
 field they configured. A typo in `NENGOK_DIAGNOSER_MODEL` fails with
 `InvalidGeminiModelError: ... is not a valid Gemini model` instead of
 unwinding a stack trace from inside the SDK.
+
+When the caller threads a `RetryPolicy` through, the wrapper retries
+quota and 5xx failures with exponential backoff and enforces a
+per-attempt wall-clock timeout. Authentication and invalid-model
+errors are terminal and fail fast.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import re
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from nengok.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from nengok.config import NengokConfig
+
+logger = get_logger(__name__)
 
 
 class GeminiCallError(RuntimeError):
@@ -49,6 +71,33 @@ class GeminiQuotaError(GeminiCallError):
         self.quota_id = quota_id
 
 
+class GeminiTimeoutError(GeminiCallError):
+    """Raised when a Gemini call exceeds the per-call wall-clock timeout."""
+
+    def __init__(self, message: str, *, timeout_seconds: float, model: str) -> None:
+        super().__init__(message)
+        self.timeout_seconds = timeout_seconds
+        self.model = model
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Tenacity retry knobs for a single Gemini call site."""
+
+    max_attempts: int = 3
+    min_backoff_seconds: float = 1.0
+    max_backoff_seconds: float = 16.0
+    timeout_seconds: float = 45.0
+
+    @classmethod
+    def from_config(cls, config: NengokConfig) -> RetryPolicy:
+        return cls(
+            max_attempts=config.gemini_max_retries,
+            min_backoff_seconds=config.gemini_min_retry_backoff_seconds,
+            timeout_seconds=config.gemini_timeout_seconds,
+        )
+
+
 _RETRY_DELAY_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)s$")
 _RETRY_IN_MESSAGE_PATTERN = re.compile(r"retry in (\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
 
@@ -61,6 +110,7 @@ def call_gemini(
     config: Any = None,
     env_var_hint: str | None = None,
     role_hint: str | None = None,
+    retry_policy: RetryPolicy | None = None,
 ) -> str:
     """
     Invoke `client.models.generate_content` and translate API errors.
@@ -71,22 +121,115 @@ def call_gemini(
     knob the user actually turned. `role_hint` names the pipeline
     stage (e.g. `"Clusterer"`) so multi-stage runs are debuggable
     from the error alone.
+
+    When `retry_policy` is provided, quota and 5xx failures retry with
+    exponential backoff and each attempt is wrapped in a wall-clock
+    timeout. Auth and invalid-model errors short-circuit out without
+    retrying. When `retry_policy` is None, the call runs once with no
+    timeout for backwards compatibility with callers that manage
+    retries themselves.
     """
     try:
         from google.genai import errors as genai_errors
     except ImportError as exc:
         raise RuntimeError("google-genai is not installed; install with the `gemini` extra.") from exc
 
+    def _attempt() -> str:
+        return _invoke_once(
+            client,
+            genai_errors=genai_errors,
+            model=model,
+            contents=contents,
+            config=config,
+            env_var_hint=env_var_hint,
+            role_hint=role_hint,
+            timeout_seconds=retry_policy.timeout_seconds if retry_policy else None,
+        )
+
+    if retry_policy is None or retry_policy.max_attempts <= 1:
+        return _attempt()
+
+    retryer = retry(
+        reraise=True,
+        stop=stop_after_attempt(retry_policy.max_attempts),
+        wait=wait_exponential(
+            multiplier=retry_policy.min_backoff_seconds,
+            min=retry_policy.min_backoff_seconds,
+            max=retry_policy.max_backoff_seconds,
+        ),
+        retry=retry_if_exception(lambda exc: _is_retryable(exc, genai_errors=genai_errors)),
+        before_sleep=_log_retry_attempt,
+    )
+    return retryer(_attempt)()
+
+
+def _invoke_once(
+    client: Any,
+    *,
+    genai_errors: Any,
+    model: str,
+    contents: Any,
+    config: Any,
+    env_var_hint: str | None,
+    role_hint: str | None,
+    timeout_seconds: float | None,
+) -> str:
     kwargs: dict[str, Any] = {"model": model, "contents": contents}
     if config is not None:
         kwargs["config"] = config
 
+    def runner() -> Any:
+        return client.models.generate_content(**kwargs)
+
     try:
-        response = client.models.generate_content(**kwargs)
+        response = _run_with_timeout(
+            runner, timeout_seconds=timeout_seconds, model=model, role_hint=role_hint
+        )
     except genai_errors.APIError as exc:
         _translate_and_raise(exc, model=model, env_var_hint=env_var_hint, role_hint=role_hint)
 
     return response.text or ""
+
+
+def _run_with_timeout(
+    fn: Any,
+    *,
+    timeout_seconds: float | None,
+    model: str,
+    role_hint: str | None,
+) -> Any:
+    if timeout_seconds is None or timeout_seconds <= 0:
+        return fn()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fn)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError as exc:
+            future.cancel()
+            role = role_hint or "Gemini call"
+            raise GeminiTimeoutError(
+                f"{role}: timed out after {timeout_seconds:.1f}s for model {model!r}.",
+                timeout_seconds=timeout_seconds,
+                model=model,
+            ) from exc
+
+
+def _is_retryable(exc: BaseException, *, genai_errors: Any) -> bool:
+    if isinstance(exc, GeminiQuotaError | GeminiTimeoutError):
+        return True
+    return isinstance(exc, genai_errors.ServerError)
+
+
+def _log_retry_attempt(retry_state: RetryCallState) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
+    logger.warning(
+        "Gemini retry attempt=%d delay=%.2fs error=%s",
+        retry_state.attempt_number,
+        delay,
+        type(exc).__name__ if exc is not None else "unknown",
+    )
 
 
 def _translate_and_raise(

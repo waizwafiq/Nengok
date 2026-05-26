@@ -42,6 +42,10 @@ DEFAULT_MCP_NPX_COMMAND = "npx"
 DEFAULT_MCP_STARTUP_TIMEOUT = 30.0
 DEFAULT_MCP_REQUEST_TIMEOUT = 30.0
 
+DEFAULT_GEMINI_TIMEOUT_SECONDS = 45.0
+DEFAULT_GEMINI_MAX_RETRIES = 3
+DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS = 1.0
+
 
 @dataclass(frozen=True)
 class NengokConfig:
@@ -75,6 +79,10 @@ class NengokConfig:
     mcp_package: str = DEFAULT_MCP_PACKAGE
     mcp_startup_timeout: float = DEFAULT_MCP_STARTUP_TIMEOUT
     mcp_request_timeout: float = DEFAULT_MCP_REQUEST_TIMEOUT
+
+    gemini_timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS
+    gemini_max_retries: int = DEFAULT_GEMINI_MAX_RETRIES
+    gemini_min_retry_backoff_seconds: float = DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS
 
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:

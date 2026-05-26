@@ -21,7 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
-from nengok.utils.gemini import call_gemini
+from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -144,6 +144,7 @@ class Clusterer:
             contents=[{"role": "user", "parts": [{"text": prompt}]}],
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Clusterer",
+            retry_policy=RetryPolicy.from_config(self.config),
         )
 
 

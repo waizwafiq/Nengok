@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.types import Cluster, RegressionTestCase
-from nengok.utils.gemini import call_gemini
+from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -144,6 +144,7 @@ class TestGenerator:
             config=types.GenerateContentConfig(response_mime_type="application/json"),
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Test Generator",
+            retry_policy=RetryPolicy.from_config(self.config),
         )
 
 
