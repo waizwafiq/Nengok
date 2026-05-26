@@ -21,7 +21,7 @@ export interface DashboardOverview {
   close_rate: number;
   regression_test_count: number;
   fix_pass_rate_30d: number | null;
-  gemini_tokens_used_30d: number;
-  gemini_dollars_used_30d: number;
-  gemini_spend_sparkline_30d: GeminiSpendPoint[];
+  gemini_tokens_used_30d?: number;
+  gemini_dollars_used_30d?: number;
+  gemini_spend_sparkline_30d?: GeminiSpendPoint[];
 }

@@ -128,9 +128,9 @@ export function OverviewPage() {
           hint="Average across recent experiments"
         />
         <CostCard
-          dollars={data.gemini_dollars_used_30d}
-          tokens={data.gemini_tokens_used_30d}
-          sparkline={data.gemini_spend_sparkline_30d}
+          dollars={data.gemini_dollars_used_30d ?? 0}
+          tokens={data.gemini_tokens_used_30d ?? 0}
+          sparkline={data.gemini_spend_sparkline_30d ?? []}
         />
       </section>
     </div>
