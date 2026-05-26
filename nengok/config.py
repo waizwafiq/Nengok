@@ -103,6 +103,8 @@ class NengokConfig:
     circuit_breaker_backoff_seconds: int = 900
     circuit_breaker_consecutive_failures: int = 3
 
+    metrics_enabled: bool = False
+
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
         """

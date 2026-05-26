@@ -43,6 +43,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "tenacity>=8.4.0",
     "python-json-logger>=2.0.7",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]

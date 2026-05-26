@@ -91,6 +91,16 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
+    if config.metrics_enabled:
+        from fastapi.responses import Response
+
+        from nengok.server.metrics import render_text
+
+        @app.get("/metrics", include_in_schema=False)
+        def metrics() -> Response:
+            body, content_type = render_text()
+            return Response(content=body, media_type=content_type)
+
     frontend_dir = _resolve_frontend_dir()
     if frontend_dir is not None:
         logger.info("serving dashboard assets from %s", frontend_dir)
