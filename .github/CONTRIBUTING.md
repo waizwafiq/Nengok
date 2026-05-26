@@ -127,8 +127,8 @@ If you set one of these to a string Google does not recognise, every Gemini call
 The free tier of `gemini-2.5-flash` is capped at 20 requests per day per project, which a few back-to-back `python -m sample_agent.seed --count 15` invocations will burn through. When the API answers 429, Nengok behaves differently depending on the entry point:
 
 - **`python -m sample_agent.seed`** parses the API-suggested retry delay out of the `RetryInfo` block, sleeps that long plus one second of buffer, and retries the same query once. If the retry also 429s, the run is marked failed and the loop continues to the next query. The summary line at the end reports the surviving count.
-- **`nengok run`** retries 429s and 5xx errors inside `call_gemini` with exponential backoff up to `gemini_max_retries` attempts (default 3), each attempt capped at `gemini_timeout_seconds` (default 45). When the retry budget exhausts, the CLI prints a one-line `Error: ...` with the parsed retry delay and quota id, then exits 1.
-- **`nengok watch`** applies the same per-call retries. A cycle that still fails afterwards prints `Cycle skipped: ...` to stderr and the loop sleeps until the next interval. Three consecutive failures in the same stage trip the circuit breaker, which pauses the loop for `circuit_breaker_backoff_seconds` (default 900s) and drops a `circuit-breaker.md` incident under `artifacts/incidents/<iso>/` so the operator can see the recent tracebacks without grepping logs.
+- **`nengok run`** retries 429s and 5xx errors inside `call_gemini` with exponential backoff up to `gemini_max_retries` attempts (default 3), each attempt capped at `gemini_timeout_seconds` (default 45). When the retry budget exhausts, the CLI prints `Error (gemini-quota): ...` with the parsed retry delay and quota id, then exits 1.
+- **`nengok watch`** applies the same per-call retries. A cycle that still fails afterwards prints `Cycle skipped in '<stage>' (gemini-quota): ...` to stderr and the loop sleeps until the next interval. Three consecutive failures in the same stage trip the circuit breaker, which pauses the loop for `circuit_breaker_backoff_seconds` (default 900s) and drops a `circuit-breaker.md` incident under `artifacts/incidents/<iso>/` so the operator can see the recent tracebacks without grepping logs.
 
 To raise the cap, enable billing at <https://ai.dev/rate-limit> and the free-tier quotaId (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) stops applying. To keep using free tier but make Nengok behave, point `NENGOK_DIAGNOSER_MODEL` and `SAMPLE_AGENT_MODEL` at different models so the daily caps don't share a bucket.
 
@@ -278,6 +278,10 @@ The `pip install -e . --no-deps` re-fires the hatch hook so the new `dist/` copi
 The architectural rules — code-first evaluators, no data egress, human-in-the-loop, Phoenix SDK for writes / MCP for reads, pinned Phoenix versions — are summarized in the README. Read those before opening a non-trivial PR.
 
 CI rejects suppressions (`# noqa`, `# type: ignore`, `// eslint-disable`, `as any`). If a rule fires, fix the root cause.
+
+### External-API failures
+
+Anything that talks to Phoenix or Gemini raises a typed exception from [nengok/errors.py](../nengok/errors.py), not a bare `RuntimeError`. The CLI catches `NengokError` once and dispatches to a per-class hint, so the operator sees `Error (missing-api-key): ...` with the env var to set, or `Error (gemini-quota): ...` with the retry delay and quotaId, instead of a traceback. When you add a new call site, follow the same pattern: pick the closest existing class (`MissingApiKeyError`, `OptionalDependencyError`, `BaselinePromptError`, `AgentRunnerLoadError`, `PhoenixConnectionError`, `PhoenixProjectNotFoundError`), include the exact fix in the message (env var name, config field, install command, or URL), and pass structured context as keyword args so the dispatcher can render it. Add a new subclass only if no existing one fits, and register a label for it in `nengok.cli._error_label`.
 
 ### Tests that need an optional extra
 
