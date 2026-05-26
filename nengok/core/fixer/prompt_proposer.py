@@ -22,6 +22,7 @@ from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
 from nengok.errors import BaselinePromptError, MissingApiKeyError
 from nengok.phoenix.client import PhoenixWrapper
@@ -53,6 +54,7 @@ class PromptProposer:
     phoenix: PhoenixWrapper | None = None
     gemini_call: GeminiTextCall | None = None
     cost_tracker: CostTracker | None = None
+    redactor: Redactor | None = None
 
     def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
         """
@@ -117,11 +119,13 @@ class PromptProposer:
         baseline: str,
         exemplars: list[TraceSpan],
     ) -> _GeminiProposal:
+        redactor = self.redactor or Redactor.from_config(self.config)
         prompt = _build_proposer_prompt(
             cluster=cluster,
             baseline=baseline,
             exemplars=exemplars,
             char_budget=self.config.cluster_trace_char_budget,
+            redactor=redactor,
         )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
@@ -186,12 +190,14 @@ def _trim(value: str | None, budget: int) -> str:
 def _exemplar_rows(
     exemplars: list[TraceSpan],
     char_budget: int,
+    *,
+    redactor: Redactor,
 ) -> list[dict[str, Any]]:
     return [
         {
             "span_id": span.span_id,
-            "input": _trim(span.input_value, char_budget),
-            "output": _trim(span.output_value, char_budget),
+            "input": redactor.redact(_trim(span.input_value, char_budget)),
+            "output": redactor.redact(_trim(span.output_value, char_budget)),
         }
         for span in exemplars
     ]
@@ -203,6 +209,7 @@ def _build_proposer_prompt(
     baseline: str,
     exemplars: list[TraceSpan],
     char_budget: int,
+    redactor: Redactor,
 ) -> str:
     hypothesis = cluster.hypothesis
     hypothesis_block = (
@@ -210,7 +217,7 @@ def _build_proposer_prompt(
         if hypothesis is not None
         else "(no hypothesis available)"
     )
-    rows = _exemplar_rows(exemplars[:MAX_PROPOSER_EXEMPLARS], char_budget)
+    rows = _exemplar_rows(exemplars[:MAX_PROPOSER_EXEMPLARS], char_budget, redactor=redactor)
     schema_hint = json.dumps(_GeminiProposal.model_json_schema(), indent=2)
 
     return (
