@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.types import Cluster, RegressionTestCase
@@ -107,8 +107,19 @@ class TestGenerator:
         )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
-        parsed = _GeminiCaseList.model_validate_json(_strip_code_fence(raw))
-        return parsed.cases
+        try:
+            return _GeminiCaseList.model_validate_json(_strip_code_fence(raw)).cases
+        except ValidationError:
+            logger.warning(
+                "Test generator response failed validation for cluster=%s; retrying once",
+                cluster.cluster_id,
+            )
+            retry_prompt = (
+                prompt + "\n\nReturn ONLY valid JSON matching the schema above. "
+                "No prose, no markdown, no code fence."
+            )
+            retry = gemini(retry_prompt)
+            return _GeminiCaseList.model_validate_json(_strip_code_fence(retry)).cases
 
     def _default_gemini_call(self, prompt: str) -> str:
         from google import genai
@@ -121,14 +132,16 @@ class TestGenerator:
                 "or google_api_key in the Nengok config."
             )
         client = genai.Client(api_key=api_key)
+        # response_schema is omitted on purpose: _GeminiCase has dict[str, Any]
+        # fields, and Pydantic v2 emits `additionalProperties` for those, which
+        # the Gemini Developer API rejects (only Vertex/Enterprise mode accepts
+        # it). The prompt already embeds the schema and _ask_gemini retries
+        # once on a ValidationError, so reliability stays roughly equivalent.
         return call_gemini(
             client,
             model=self.config.diagnoser_model,
             contents=[{"role": "user", "parts": [{"text": prompt}]}],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_GeminiCaseList,
-            ),
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Test Generator",
         )

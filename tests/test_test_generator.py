@@ -136,11 +136,33 @@ def test_generate_metadata_includes_audit_fields(tmp_config: NengokConfig) -> No
 
 
 def test_generate_raises_on_unparsable_json(tmp_config: NengokConfig) -> None:
+    calls = {"n": 0}
+
     def fake_gemini(_prompt: str) -> str:
+        calls["n"] += 1
         return "not json"
 
     with pytest.raises(ValidationError):
         TestGenerator(config=tmp_config, gemini_call=fake_gemini).generate(_cluster())
+    assert calls["n"] == 2, "expected one retry before propagating ValidationError"
+
+
+def test_generate_retries_on_validation_error_then_succeeds(
+    tmp_config: NengokConfig, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls = {"n": 0}
+
+    def fake_gemini(_prompt: str) -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return "not json at all"
+        return _cases_json(MIN_REGRESSION_CASES)
+
+    cases = TestGenerator(config=tmp_config, gemini_call=fake_gemini).generate(_cluster())
+
+    assert calls["n"] == 2
+    assert len(cases) == MIN_REGRESSION_CASES
+    assert any("failed validation" in record.message for record in caplog.records)
 
 
 def test_generate_handles_code_fenced_json(tmp_config: NengokConfig) -> None:
