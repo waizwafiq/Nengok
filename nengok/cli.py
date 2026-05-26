@@ -55,6 +55,14 @@ app = typer.Typer(
     add_completion=False,
 )
 
+config_app = typer.Typer(
+    name="config",
+    help="Inspect and seed Nengok configuration files.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(config_app, name="config")
+
 logger = get_logger(__name__)
 
 
@@ -554,6 +562,53 @@ def _load_config(**overrides: Any) -> NengokConfig:
         raise NengokCLIError(str(exc)) from exc
     except ValueError as exc:
         raise NengokCLIError(str(exc)) from exc
+
+
+@config_app.command("init")
+def config_init(
+    template: Annotated[
+        str,
+        typer.Option(
+            "--template",
+            help="Template to write: 'local', 'cloud', or 'qa-agent'.",
+        ),
+    ] = "local",
+    config_path: Annotated[
+        Path,
+        typer.Option("--config-path", help="Where to write the config file."),
+    ] = DEFAULT_CONFIG_PATH,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite an existing config file."),
+    ] = False,
+) -> None:
+    """
+    Write a documented config template to disk without prompting.
+
+    For users who do not want the interactive `nengok init` wizard.
+    The output is the same template `nengok init` seeds from, with
+    every available field commented in plain English.
+    """
+    from nengok import templates as template_pkg
+    from nengok.cli_helpers import render_template
+
+    if template not in template_pkg.list_templates():
+        available = ", ".join(template_pkg.list_templates())
+        raise NengokCLIError(f"Unknown template '{template}'. Available templates: {available}.")
+
+    if config_path.exists() and not force:
+        raise NengokCLIError(
+            f"{config_path} already exists. Pass --force to overwrite, " "or pick a different --config-path."
+        )
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    body = render_template(template)
+    config_path.write_text(body, encoding="utf-8")
+    typer.echo(f"Wrote {config_path} from the '{template}' template.")
+    typer.echo(
+        "Open it to fill in GOOGLE_API_KEY (or set the env var), then run "
+        "`nengok doctor` to verify the install."
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
