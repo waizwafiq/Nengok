@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.types import Cluster, RegressionTestCase
+from nengok.errors import MissingApiKeyError
 from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
 
@@ -124,15 +125,17 @@ class TestGenerator:
             return _GeminiCaseList.model_validate_json(_strip_code_fence(retry)).cases
 
     def _default_gemini_call(self, prompt: str) -> str:
+        api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError(
+                "Test Generator needs a Gemini API key. Set `GOOGLE_API_KEY` in your "
+                'environment (or `.env`), or write `google_api_key = "..."` into '
+                "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
+                role="Test Generator",
+            )
         from google import genai
         from google.genai import types
 
-        api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "Gemini test generator needs GOOGLE_API_KEY in the environment "
-                "or google_api_key in the Nengok config."
-            )
         client = genai.Client(api_key=api_key)
         # response_schema is omitted on purpose: _GeminiCase has dict[str, Any]
         # fields, and Pydantic v2 emits `additionalProperties` for those, which

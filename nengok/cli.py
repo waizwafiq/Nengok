@@ -24,8 +24,18 @@ from dotenv import load_dotenv
 from nengok import __version__
 from nengok.config import DEFAULT_CONFIG_PATH, NengokConfig
 from nengok.diagnostics import DEFAULT_PROBES, Probe, ProbeResult, ProbeStatus
-from nengok.errors import ConfigError
-from nengok.utils.gemini import GeminiCallError
+from nengok.errors import (
+    AgentRunnerLoadError,
+    BaselinePromptError,
+    ConfigError,
+    GoldenDatasetError,
+    MissingApiKeyError,
+    NengokError,
+    OptionalDependencyError,
+    PhoenixConnectionError,
+    PhoenixProjectNotFoundError,
+)
+from nengok.utils.gemini import GeminiAuthError, GeminiCallError, GeminiQuotaError
 from nengok.utils.logging import configure_logging, get_logger
 
 
@@ -247,8 +257,8 @@ def run(
     orchestrator = Orchestrator(config=config)
     try:
         result = orchestrator.run_once(dry_run=dry_run)
-    except GeminiCallError as exc:
-        typer.echo(f"Error: {exc}", err=True)
+    except NengokError as exc:
+        _report_external_error(exc)
         raise typer.Exit(code=1) from exc
 
     typer.echo(
@@ -313,10 +323,10 @@ def watch(
             orchestrator.run_once()
             stage = orchestrator.current_stage or "cycle"
             breaker.record_success(stage)
-        except GeminiCallError as exc:
+        except NengokError as exc:
             stage = orchestrator.current_stage or "cycle"
             opened = breaker.record_failure(stage, exc)
-            typer.echo(f"Cycle skipped: {exc}", err=True)
+            _report_external_error(exc, prefix=f"Cycle skipped in '{stage}'")
             if opened:
                 _open_breaker_pause(breaker=breaker, config=config, write_incident=write_incident)
         except Exception as exc:
@@ -492,6 +502,48 @@ def _doctor_exit_code(*, results: list[ProbeResult], strict: bool) -> int:
     if strict and any(r.warned for r in results):
         return 1
     return 0
+
+
+def _report_external_error(exc: NengokError, *, prefix: str = "Error") -> None:
+    """
+    Print a tailored, one-line-plus-hint message for `exc` to stderr.
+
+    The CLI catches the typed base class and dispatches here so each
+    failure class gets a specific next step. The exception's own
+    `__str__` already carries the actionable detail (env var to set,
+    URL to visit) per `nengok/errors.py`; this layer adds a short
+    classifier prefix and prints any extra structured fields.
+    """
+    label = _error_label(exc)
+    typer.echo(f"{prefix} ({label}): {exc}", err=True)
+
+    if isinstance(exc, OptionalDependencyError):
+        typer.echo(f"  Fix: {exc.install_hint}", err=True)
+    elif isinstance(exc, GeminiQuotaError):
+        if exc.retry_after_seconds is not None:
+            typer.echo(f"  Retry after: {exc.retry_after_seconds:.0f}s", err=True)
+        if exc.quota_id is not None:
+            typer.echo(f"  Quota id: {exc.quota_id}", err=True)
+
+
+def _error_label(exc: NengokError) -> str:
+    """Short, kebab-case classifier for the typed exception class."""
+    mapping: dict[type[NengokError], str] = {
+        MissingApiKeyError: "missing-api-key",
+        OptionalDependencyError: "missing-dependency",
+        BaselinePromptError: "missing-baseline-prompt",
+        GoldenDatasetError: "golden-dataset-missing",
+        AgentRunnerLoadError: "agent-runner-not-registered",
+        PhoenixConnectionError: "phoenix-unreachable",
+        PhoenixProjectNotFoundError: "phoenix-project-missing",
+        GeminiAuthError: "gemini-auth",
+        GeminiQuotaError: "gemini-quota",
+        GeminiCallError: "gemini-call",
+    }
+    for cls, label in mapping.items():
+        if isinstance(exc, cls):
+            return label
+    return "nengok-error"
 
 
 def _load_config(**overrides: Any) -> NengokConfig:

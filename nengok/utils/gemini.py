@@ -28,6 +28,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from nengok.errors import NengokError, OptionalDependencyError
 from nengok.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class GeminiCallError(RuntimeError):
+class GeminiCallError(NengokError):
     """Base class for translated Gemini call failures."""
 
 
@@ -138,7 +139,10 @@ def call_gemini(
     try:
         from google.genai import errors as genai_errors
     except ImportError as exc:
-        raise RuntimeError("google-genai is not installed; install with the `gemini` extra.") from exc
+        raise OptionalDependencyError(
+            "google-genai is not installed but is required to call Gemini.",
+            install_hint="pip install nengok[gemini]",
+        ) from exc
 
     def _attempt() -> str:
         return _invoke_once(

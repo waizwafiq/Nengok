@@ -9,6 +9,7 @@ import pytest
 
 from nengok.config import NengokConfig
 from nengok.core.evaluators.code_evals import output_is_present
+from nengok.errors import AgentRunnerLoadError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.runners.agent_runner import SAMPLE_AGENT_PROJECT, register_runner
 
@@ -175,7 +176,7 @@ def test_run_experiment_fails_when_runner_missing(
     wrapper = PhoenixWrapper(config)
     wrapper._client = _FakeClient(_stub_ran_experiment())
 
-    with pytest.raises(RuntimeError, match="No agent runner registered"):
+    with pytest.raises(AgentRunnerLoadError) as excinfo:
         wrapper.run_experiment(
             dataset_ref={"name": "ds"},
             prompt="P",
@@ -183,6 +184,8 @@ def test_run_experiment_fails_when_runner_missing(
             experiment_name="exp-1",
             dry_run=0,
         )
+    assert excinfo.value.project_identifier == "never-registered-project"
+    assert "register_runner" in str(excinfo.value)
 
 
 def test_run_experiment_failing_code_eval_drops_pass_rate(

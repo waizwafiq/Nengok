@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.types import Cluster, RootCauseHypothesis, TraceSpan
+from nengok.errors import MissingApiKeyError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
@@ -99,15 +100,17 @@ class Hypothesizer:
             return RootCauseHypothesis.model_validate_json(_strip_code_fence(retry))
 
     def _default_gemini_call(self, prompt: str) -> str:
+        api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise MissingApiKeyError(
+                "Hypothesizer needs a Gemini API key. Set `GOOGLE_API_KEY` in your "
+                'environment (or `.env`), or write `google_api_key = "..."` into '
+                "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
+                role="Hypothesizer",
+            )
         from google import genai
         from google.genai import types
 
-        api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "Gemini diagnoser needs GOOGLE_API_KEY in the environment "
-                "or google_api_key in the Nengok config."
-            )
         client = genai.Client(api_key=api_key)
         return call_gemini(
             client,
