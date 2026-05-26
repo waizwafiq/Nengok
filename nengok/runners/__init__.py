@@ -14,6 +14,7 @@ from nengok.runners.agent_runner import (
     register_runner,
     sample_agent_runner,
 )
+from nengok.runners.loader import load_runner
 from nengok.runners.protocol import AgentRunner
 from nengok.runners.sample_agent_runner import SampleAgentRunner
 
@@ -22,6 +23,7 @@ __all__ = [
     "AgentRunner",
     "SampleAgentRunner",
     "get_runner",
+    "load_runner",
     "register_runner",
     "sample_agent_runner",
 ]

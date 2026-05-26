@@ -77,6 +77,7 @@ class NengokConfig:
 
     project_identifier: str = "default"
     agent_runner: str | None = None
+    agent_runner_kwargs: dict[str, Any] = field(default_factory=dict)
 
     diagnoser_model: str = DIAGNOSER_MODEL
     judge_model: str = JUDGE_MODEL
