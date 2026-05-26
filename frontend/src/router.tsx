@@ -2,9 +2,14 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { DashboardLayout } from "./layouts/DashboardLayout";
 import { ClustersPage } from "./pages/ClustersPage";
 import { ClusterDetailPage } from "./pages/ClusterDetailPage";
+import { LoginPage } from "./pages/LoginPage";
 import { OverviewPage } from "./pages/OverviewPage";
 
 export const router = createBrowserRouter([
+  {
+    path: "/login",
+    element: <LoginPage />,
+  },
   {
     path: "/",
     element: <DashboardLayout />,
