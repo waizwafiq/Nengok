@@ -23,6 +23,7 @@ from nengok.core.types import (
     RootCauseHypothesis,
     TraceSpan,
 )
+from nengok.errors import BaselinePromptError
 
 
 def _cluster(exemplar_ids: list[str], *, with_hypothesis: bool = True) -> Cluster:
@@ -165,8 +166,10 @@ def test_load_baseline_raises_when_no_source_available(tmp_config: NengokConfig)
     config = replace(tmp_config, project_identifier="unknown-agent")
     proposer = PromptProposer(config=config)
 
-    with pytest.raises(RuntimeError, match="No baseline prompt"):
+    with pytest.raises(BaselinePromptError) as excinfo:
         proposer.load_baseline_prompt()
+    assert excinfo.value.project_identifier == "unknown-agent"
+    assert "baseline_prompt_path" in str(excinfo.value)
 
 
 def test_proposer_prompt_includes_hypothesis_and_exemplars(tmp_config: NengokConfig) -> None:
