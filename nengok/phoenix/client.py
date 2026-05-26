@@ -191,7 +191,7 @@ class PhoenixWrapper:
 
         summary = summarize_experiment(
             task_runs=ran.get("task_runs") or [],
-            evaluation_runs=ran.get("evaluation_runs") or [],
+            evaluation_runs=_normalize_evaluation_runs(ran.get("evaluation_runs") or []),
             code_evaluator_names=code_names,
         )
         return _ExperimentRun(
@@ -269,6 +269,27 @@ class PhoenixWrapper:
         created = self.create_dataset(name=dataset_name, cases=cases)
         self._golden_dataset_ref = created
         return created
+
+
+_EVALUATION_RUN_FIELDS = ("experiment_run_id", "name", "result", "error")
+
+
+def _normalize_evaluation_runs(runs: Sequence[Any]) -> list[Mapping[str, Any]]:
+    """
+    Coerce Phoenix `ExperimentEvaluationRun` objects into plain dicts.
+
+    Phoenix returns `task_runs` as `ExperimentRun` (TypedDict) but
+    `evaluation_runs` as a frozen dataclass with attribute access. The
+    aggregator in `nengok.core.evaluators.aggregate` takes the dict
+    shape, so we adapt here and keep the aggregator SDK-agnostic.
+    """
+    normalized: list[Mapping[str, Any]] = []
+    for run in runs:
+        if isinstance(run, Mapping):
+            normalized.append(run)
+            continue
+        normalized.append({field: getattr(run, field, None) for field in _EVALUATION_RUN_FIELDS})
+    return normalized
 
 
 def _resolve_evaluators(evaluators: list[CodeEvaluator | JudgeSpec]) -> list[Any]:
