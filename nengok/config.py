@@ -100,6 +100,9 @@ class NengokConfig:
     gemini_input_dollars_per_million: float = DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION
     gemini_output_dollars_per_million: float = DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION
 
+    circuit_breaker_backoff_seconds: int = 900
+    circuit_breaker_consecutive_failures: int = 3
+
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
         """

@@ -132,27 +132,111 @@ def watch(
     """
     Continuously run cycles on a fixed interval.
 
-    This is the simplest possible heartbeat: a single process that
-    sleeps between cycles. Production deployments should use an
-    event-driven scheduler — see Section 9b of the proposal.
+    A circuit breaker pauses the loop after the configured number of
+    consecutive failures in the same stage. SIGTERM and SIGINT shut
+    the process down cleanly, leaving the SQLite state consistent.
     """
-    import time
+    import signal
 
+    from nengok.core.circuit_breaker import CircuitBreaker
+    from nengok.core.incidents import write_incident
     from nengok.core.orchestrator import Orchestrator
 
     config = _load_config(project_identifier=project)
     orchestrator = Orchestrator(config=config)
+    breaker = CircuitBreaker(
+        threshold=config.circuit_breaker_consecutive_failures,
+        backoff_seconds=config.circuit_breaker_backoff_seconds,
+    )
+
+    stop_requested = False
+
+    def _request_stop(signum: int, frame: Any) -> None:
+        del signum, frame
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, _request_stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _request_stop)
 
     typer.echo(f"Watching project '{config.project_identifier}' every {interval_seconds}s. Ctrl-C to stop.")
-    try:
-        while True:
-            try:
-                orchestrator.run_once()
-            except GeminiCallError as exc:
-                typer.echo(f"Cycle skipped: {exc}", err=True)
-            time.sleep(interval_seconds)
-    except KeyboardInterrupt:
-        typer.echo("\nStopped.")
+
+    while not stop_requested:
+        try:
+            orchestrator.run_once()
+            stage = orchestrator.current_stage or "cycle"
+            breaker.record_success(stage)
+        except GeminiCallError as exc:
+            stage = orchestrator.current_stage or "cycle"
+            opened = breaker.record_failure(stage, exc)
+            typer.echo(f"Cycle skipped: {exc}", err=True)
+            if opened:
+                _open_breaker_pause(breaker=breaker, config=config, write_incident=write_incident)
+        except Exception as exc:
+            stage = orchestrator.current_stage or "cycle"
+            opened = breaker.record_failure(stage, exc)
+            typer.echo(f"Cycle failed in '{stage}': {exc}", err=True)
+            if opened:
+                _open_breaker_pause(breaker=breaker, config=config, write_incident=write_incident)
+
+        if stop_requested:
+            break
+        _interruptible_sleep(interval_seconds, lambda: stop_requested)
+
+    typer.echo("\nStopped.")
+
+
+def _interruptible_sleep(total_seconds: float, should_stop: Any) -> None:
+    """Sleep in small slices so SIGTERM/SIGINT exit fast."""
+    import time
+
+    slept = 0.0
+    slice_seconds = 0.5
+    while slept < total_seconds:
+        if should_stop():
+            return
+        chunk = min(slice_seconds, total_seconds - slept)
+        time.sleep(chunk)
+        slept += chunk
+
+
+def _open_breaker_pause(*, breaker: Any, config: NengokConfig, write_incident: Any) -> None:
+    """Pause for the breaker's back-off and write a circuit-breaker incident."""
+    import time
+
+    stage = breaker.open_stage
+    backoff = breaker.backoff_seconds
+    body_lines = [
+        f"- failing_stage: `{stage}`",
+        f"- consecutive_failures: {breaker.threshold}",
+        f"- backoff_seconds: {backoff}",
+        "",
+        "Recent tracebacks (newest last):",
+        "",
+    ]
+    for failure in breaker.recent_failures():
+        body_lines.append(f"### {failure.recorded_at.isoformat()} :: {failure.error_class}")
+        body_lines.append("")
+        body_lines.append("```")
+        body_lines.append(failure.traceback.strip())
+        body_lines.append("```")
+        body_lines.append("")
+    write_incident(
+        artifacts_dir=config.artifacts_dir,
+        filename="circuit-breaker.md",
+        title=f"Circuit breaker tripped in stage '{stage}'",
+        body="\n".join(body_lines),
+    )
+    minutes = backoff / 60
+    typer.echo(
+        f"Nengok watch paused for {minutes:.0f} min after "
+        f"{breaker.threshold} consecutive {stage} failures. "
+        "See artifacts/incidents/<iso>/circuit-breaker.md to investigate.",
+        err=True,
+    )
+    time.sleep(backoff)
+    breaker.close()
 
 
 @app.command()

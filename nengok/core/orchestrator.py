@@ -52,6 +52,7 @@ class Orchestrator:
     config: NengokConfig
 
     _traced: ClassVar[bool] = False
+    current_stage: str | None = None
 
     def __post_init__(self) -> None:
         self._phoenix = PhoenixWrapper(self.config)
@@ -90,6 +91,7 @@ class Orchestrator:
             )
 
             with tracer.start_as_current_span("observer") as observer_span:
+                self.current_stage = "observer"
                 spans = self._sampler.sample()
                 anomalies = self._anomaly_filter.filter(spans)
                 new_anomalies = self._state.deduplicate(anomalies)
@@ -114,6 +116,7 @@ class Orchestrator:
             baseline_prompt = self._prompt_proposer.load_baseline_prompt()
 
             with tracer.start_as_current_span("diagnoser") as diagnoser_span:
+                self.current_stage = "diagnoser"
                 raw_clusters = self._clusterer.cluster(new_anomalies)
                 clusters: list[Cluster] = []
                 for raw in raw_clusters:
@@ -150,6 +153,7 @@ class Orchestrator:
 
                 try:
                     with tracer.start_as_current_span("fixer") as fixer_span:
+                        self.current_stage = "fixer"
                         set_attributes(fixer_span, cluster_attrs)
                         cases = self._test_generator.generate(cluster)
                         proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
@@ -163,6 +167,7 @@ class Orchestrator:
                         self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
 
                     with tracer.start_as_current_span("verifier") as verifier_span:
+                        self.current_stage = "verifier"
                         set_attributes(verifier_span, cluster_attrs)
                         verification = self._gate.evaluate(result)
                         set_attributes(
