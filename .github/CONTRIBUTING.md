@@ -180,11 +180,13 @@ If the agent prints `WARNING: PHOENIX_BASE_URL is not set`, your `.env` is missi
 ### 6. Run a Nengok cycle
 
 ```bash
-nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
+nengok init
 nengok run
 ```
 
-`nengok init` writes config to `~/.nengok/config.toml`. `--phoenix-url` is required; `--project` defaults to the literal string `"default"` if you omit it, so pass `--project travel-planner-agent` to match the sample agent. If your Phoenix needs auth, add `--api-key <key>`; otherwise `nengok run` falls back to `PHOENIX_API_KEY` from your `.env` at request time. (Today the CLI does not read `PHOENIX_BASE_URL` or `NENGOK_PROJECT` from `.env` — only `PHOENIX_API_KEY` is picked up later at runtime.)
+`nengok init` runs an interactive wizard. It auto-detects a local `phoenix serve` on port 6006 and offers it as the default, asks for your Gemini key (validated with a one-token ping so a wrong key is caught up front), and offers `travel-planner-agent` as the default project so the sample agent works without further flags. The wizard then runs three connectivity probes (Phoenix `GET /v1/projects`, a Gemini ping, and a file-write probe under `~/.nengok/`) and only writes `~/.nengok/config.toml` if every probe passes.
+
+Every prompt has a flag equivalent for non-interactive use: `--phoenix-url`, `--phoenix-api-key`, `--google-api-key`, `--project`, `--agent-runner`. For CI or scripted setup, pass `--non-interactive` so the wizard never prompts (missing required values exit 2). Pass `--force` to write the config even if a probe fails, which is useful when Phoenix is reachable only from a different network.
 
 Before the Observer fires, `nengok run` performs an MCP preflight against the configured Phoenix project. If `npx` is on PATH, the check spawns `@arizeai/phoenix-mcp@4.0.13`, calls `list_projects`, and prints a `Heads up: Phoenix project '...' was not found via MCP` line on stderr when the project is missing. The cycle still runs (the warning is best-effort), but the message tells you up front why the Observer is about to return zero spans. Pass `--skip-preflight` to suppress the check; set `NENGOK_MCP_ENABLED=0` to disable it for every run. If `npx` is missing, the preflight downgrades to a debug log and is a no-op.
 

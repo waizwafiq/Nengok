@@ -32,6 +32,7 @@ def test_watch_trips_breaker_after_three_observer_failures(
     state_db = tmp_path / "state.db"
 
     monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaTEST")
     monkeypatch.setenv("NENGOK_ARTIFACTS_DIR", str(artifacts_dir))
     monkeypatch.setenv("NENGOK_STATE_DB", str(state_db))
     monkeypatch.setattr(cli_module, "DEFAULT_CONFIG_PATH", config_path)
