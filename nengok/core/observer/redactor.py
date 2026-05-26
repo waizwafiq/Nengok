@@ -78,7 +78,7 @@ DEFAULT_RULES: list[RedactionRule] = [
     ),
     RedactionRule(
         name="ipv6",
-        pattern=r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b",
+        pattern=r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}(?::?[A-Fa-f0-9]{0,4})\b",
         replacement="<redacted-ipv6>",
     ),
 ]
