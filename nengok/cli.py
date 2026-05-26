@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
-import click
 import typer
 from dotenv import load_dotenv
 
@@ -39,13 +38,16 @@ from nengok.utils.gemini import GeminiAuthError, GeminiCallError, GeminiQuotaErr
 from nengok.utils.logging import configure_logging, get_logger
 
 
-class NengokCLIError(click.ClickException):
-    """Click exception that exits 2 and prints just the message, no traceback."""
+def _abort(message: str) -> typer.Exit:
+    """
+    Print `message` to stderr and return a `typer.Exit(2)` for the caller to raise.
 
-    exit_code = 2
-
-    def format_message(self) -> str:
-        return self.message
+    Using `typer.Exit` directly (rather than a `ClickException` subclass)
+    keeps the CLI's exit code stable across Click versions, some of which
+    no longer honor `ClickException.exit_code` set on a subclass.
+    """
+    typer.echo(f"Error: {message}", err=True)
+    return typer.Exit(code=2)
 
 
 app = typer.Typer(
@@ -559,9 +561,9 @@ def _load_config(**overrides: Any) -> NengokConfig:
         cleaned = {k: v for k, v in overrides.items() if v is not None}
         return NengokConfig.load(**cleaned)
     except ConfigError as exc:
-        raise NengokCLIError(str(exc)) from exc
+        raise _abort(str(exc)) from exc
     except ValueError as exc:
-        raise NengokCLIError(str(exc)) from exc
+        raise _abort(str(exc)) from exc
 
 
 @config_app.command("init")
@@ -594,10 +596,10 @@ def config_init(
 
     if template not in template_pkg.list_templates():
         available = ", ".join(template_pkg.list_templates())
-        raise NengokCLIError(f"Unknown template '{template}'. Available templates: {available}.")
+        raise _abort(f"Unknown template '{template}'. Available templates: {available}.")
 
     if config_path.exists() and not force:
-        raise NengokCLIError(
+        raise _abort(
             f"{config_path} already exists. Pass --force to overwrite, " "or pick a different --config-path."
         )
 
