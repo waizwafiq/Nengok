@@ -127,8 +127,8 @@ If you set one of these to a string Google does not recognise, every Gemini call
 The free tier of `gemini-2.5-flash` is capped at 20 requests per day per project, which a few back-to-back `python -m sample_agent.seed --count 15` invocations will burn through. When the API answers 429, Nengok behaves differently depending on the entry point:
 
 - **`python -m sample_agent.seed`** parses the API-suggested retry delay out of the `RetryInfo` block, sleeps that long plus one second of buffer, and retries the same query once. If the retry also 429s, the run is marked failed and the loop continues to the next query. The summary line at the end reports the surviving count.
-- **`nengok run`** prints a one-line `Error: ...` with the retry delay and quota id, then exits 1. The cluster pipeline can't usefully resume mid-cycle, so the cleanest path is to wait and re-run.
-- **`nengok watch`** prints a one-line `Cycle skipped: ...` and waits for the next interval. The heartbeat stays alive.
+- **`nengok run`** retries 429s and 5xx errors inside `call_gemini` with exponential backoff up to `gemini_max_retries` attempts (default 3), each attempt capped at `gemini_timeout_seconds` (default 45). When the retry budget exhausts, the CLI prints a one-line `Error: ...` with the parsed retry delay and quota id, then exits 1.
+- **`nengok watch`** applies the same per-call retries. A cycle that still fails afterwards prints `Cycle skipped: ...` to stderr and the loop sleeps until the next interval. Three consecutive failures in the same stage trip the circuit breaker, which pauses the loop for `circuit_breaker_backoff_seconds` (default 900s) and drops a `circuit-breaker.md` incident under `artifacts/incidents/<iso>/` so the operator can see the recent tracebacks without grepping logs.
 
 To raise the cap, enable billing at <https://ai.dev/rate-limit> and the free-tier quotaId (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) stops applying. To keep using free tier but make Nengok behave, point `NENGOK_DIAGNOSER_MODEL` and `SAMPLE_AGENT_MODEL` at different models so the daily caps don't share a bucket.
 

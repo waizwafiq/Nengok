@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from nengok.core.types import (
     Cluster,
     ClusterStatus,
@@ -69,6 +71,9 @@ def test_overview_returns_zeroed_metrics_on_empty_store(tmp_path: Path) -> None:
     assert overview["mttd_seconds"] is None
     assert overview["mttr_seconds"] is None
     assert overview["fix_pass_rate_30d"] is None
+    assert overview["gemini_tokens_used_30d"] == 0
+    assert overview["gemini_dollars_used_30d"] == 0.0
+    assert overview["gemini_spend_sparkline_30d"] == []
 
 
 def test_overview_aggregates_status_counts_and_close_rate(tmp_path: Path) -> None:
@@ -114,3 +119,39 @@ def test_overview_sums_regression_cases_from_latest_experiment_per_cluster(tmp_p
     assert overview["regression_test_count"] == 9
     assert overview["fix_pass_rate_30d"] is not None
     assert 0.7 <= overview["fix_pass_rate_30d"] <= 0.9
+
+
+def test_overview_aggregates_gemini_spend_and_sparkline(tmp_path: Path) -> None:
+    store = StateStore(tmp_path / "state.db")
+    now = datetime.now(UTC)
+    store.record_cycle_usage(
+        cycle_id="c-1",
+        started_at=now - timedelta(days=2),
+        ended_at=now - timedelta(days=2),
+        gemini_tokens=4_000,
+        gemini_dollars=0.12,
+    )
+    store.record_cycle_usage(
+        cycle_id="c-2",
+        started_at=now - timedelta(days=1),
+        ended_at=now - timedelta(days=1),
+        gemini_tokens=6_000,
+        gemini_dollars=0.18,
+    )
+    store.record_cycle_usage(
+        cycle_id="c-3",
+        started_at=now - timedelta(days=1, hours=2),
+        ended_at=now - timedelta(days=1),
+        gemini_tokens=2_000,
+        gemini_dollars=0.05,
+    )
+
+    overview = store.dashboard_overview()
+    assert overview["gemini_tokens_used_30d"] == 12_000
+    assert overview["gemini_dollars_used_30d"] == pytest.approx(0.35)
+
+    sparkline = overview["gemini_spend_sparkline_30d"]
+    assert len(sparkline) == 2
+    assert sparkline[0]["day"] < sparkline[1]["day"]
+    assert sparkline[-1]["tokens"] == 8_000
+    assert sparkline[-1]["dollars"] == pytest.approx(0.23)

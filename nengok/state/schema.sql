@@ -51,3 +51,13 @@ CREATE TABLE IF NOT EXISTS experiments (
 
 CREATE INDEX IF NOT EXISTS experiments_cluster_idx ON experiments (cluster_id);
 CREATE INDEX IF NOT EXISTS experiments_created_idx ON experiments (created_at);
+
+CREATE TABLE IF NOT EXISTS cycles (
+    cycle_id        TEXT PRIMARY KEY,
+    started_at      TEXT NOT NULL,
+    ended_at        TEXT NOT NULL,
+    gemini_tokens   INTEGER NOT NULL DEFAULT 0,
+    gemini_dollars  REAL NOT NULL DEFAULT 0.0
+);
+
+CREATE INDEX IF NOT EXISTS cycles_started_idx ON cycles (started_at);

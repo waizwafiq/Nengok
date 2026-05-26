@@ -42,6 +42,18 @@ DEFAULT_MCP_NPX_COMMAND = "npx"
 DEFAULT_MCP_STARTUP_TIMEOUT = 30.0
 DEFAULT_MCP_REQUEST_TIMEOUT = 30.0
 
+DEFAULT_GEMINI_TIMEOUT_SECONDS = 45.0
+DEFAULT_GEMINI_MAX_RETRIES = 3
+DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS = 1.0
+
+DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS = 15.0
+DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS = 60.0
+DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS = 300.0
+
+DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET = 200_000
+DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION = 6.0
+DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION = 24.0
+
 
 @dataclass(frozen=True)
 class NengokConfig:
@@ -75,6 +87,23 @@ class NengokConfig:
     mcp_package: str = DEFAULT_MCP_PACKAGE
     mcp_startup_timeout: float = DEFAULT_MCP_STARTUP_TIMEOUT
     mcp_request_timeout: float = DEFAULT_MCP_REQUEST_TIMEOUT
+
+    gemini_timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS
+    gemini_max_retries: int = DEFAULT_GEMINI_MAX_RETRIES
+    gemini_min_retry_backoff_seconds: float = DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS
+
+    phoenix_read_timeout_seconds: float = DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS
+    phoenix_write_timeout_seconds: float = DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS
+    phoenix_experiment_timeout_seconds: float = DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS
+
+    gemini_cycle_token_budget: int = DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET
+    gemini_input_dollars_per_million: float = DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION
+    gemini_output_dollars_per_million: float = DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION
+
+    circuit_breaker_backoff_seconds: int = 900
+    circuit_breaker_consecutive_failures: int = 3
+
+    metrics_enabled: bool = False
 
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
