@@ -44,6 +44,10 @@ DEFAULT_CLUSTER_TRACE_CHAR_BUDGET = 2000
 
 DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 8765
+DEFAULT_DASHBOARD_CORS_ORIGINS: tuple[str, ...] = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
 
 DEFAULT_MCP_PACKAGE = "@arizeai/phoenix-mcp@4.0.13"
 DEFAULT_MCP_NPX_COMMAND = "npx"
@@ -90,6 +94,8 @@ class NengokConfig:
 
     dashboard_host: str = DEFAULT_DASHBOARD_HOST
     dashboard_port: int = DEFAULT_DASHBOARD_PORT
+    dashboard_auth_token: str | None = None
+    dashboard_cors_origins: list[str] = field(default_factory=lambda: list(DEFAULT_DASHBOARD_CORS_ORIGINS))
 
     mcp_enabled: bool = True
     mcp_npx_command: str = DEFAULT_MCP_NPX_COMMAND
@@ -243,7 +249,10 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_JUDGE_MODEL": "judge_model",
         "NENGOK_ARTIFACTS_DIR": "artifacts_dir",
         "NENGOK_STATE_DB": "state_db_path",
+        "NENGOK_DASHBOARD_HOST": "dashboard_host",
         "NENGOK_DASHBOARD_PORT": "dashboard_port",
+        "NENGOK_DASHBOARD_AUTH_TOKEN": "dashboard_auth_token",
+        "NENGOK_DASHBOARD_CORS_ORIGINS": "dashboard_cors_origins",
         "NENGOK_BASELINE_PROMPT_PATH": "baseline_prompt_path",
         "NENGOK_MCP_ENABLED": "mcp_enabled",
         "NENGOK_MCP_NPX_COMMAND": "mcp_npx_command",
@@ -260,6 +269,8 @@ def _read_env() -> dict[str, Any]:
             out[config_key] = int(value)
         elif config_key in {"mcp_enabled", "redaction_enabled"}:
             out[config_key] = _parse_bool(value)
+        elif config_key == "dashboard_cors_origins":
+            out[config_key] = [item.strip() for item in value.split(",") if item.strip()]
         else:
             out[config_key] = value
     return out

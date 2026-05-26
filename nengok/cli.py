@@ -13,6 +13,7 @@ Sub-commands:
 from __future__ import annotations
 
 import json as _json
+import os
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -407,7 +408,13 @@ def _open_breaker_pause(*, breaker: Any, config: NengokConfig, write_incident: A
 
 @app.command()
 def dashboard(
-    host: Annotated[str, typer.Option("--host", help="Dashboard bind address.")] = "127.0.0.1",
+    listen: Annotated[
+        str | None,
+        typer.Option(
+            "--listen",
+            help="Dashboard bind address. Defaults to dashboard_host in config (127.0.0.1).",
+        ),
+    ] = None,
     port: Annotated[int, typer.Option("--port", help="Dashboard port.")] = 8765,
     no_browser: Annotated[
         bool, typer.Option("--no-browser", help="Do not open a browser window automatically.")
@@ -419,16 +426,72 @@ def dashboard(
     from nengok.server.main import create_app
 
     config = _load_config()
+    bind_host = listen or config.dashboard_host
+    _enforce_dashboard_safety(config=config, bind_host=bind_host)
     fastapi_app = create_app(config=config)
 
     if not no_browser:
         import threading
         import webbrowser
 
-        url = f"http://{host}:{port}"
+        url = f"http://{bind_host}:{port}"
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
-    uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
+    uvicorn.run(fastapi_app, host=bind_host, port=port, log_level="info")
+
+
+_LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _enforce_dashboard_safety(*, config: NengokConfig, bind_host: str) -> None:
+    """
+    Print the LAN-exposure warning and refuse to boot in unsafe production setups.
+
+    Two checks. First, any bind address outside the localhost set gets a
+    one-shot stderr warning so an operator who typed `--listen 0.0.0.0`
+    is reminded that RCA documents are now reachable to the network.
+    Second, `NENGOK_PRODUCTION=true` is the Cloud Run safety net: the
+    dashboard refuses to start unless both an auth token is configured
+    and the bind is not localhost-only, on the assumption that prod
+    deployments need external reach and must also be locked.
+    """
+    is_local = bind_host in _LOCAL_BIND_HOSTS
+    if not is_local:
+        typer.echo(
+            f"Nengok dashboard is binding to {bind_host}. "
+            "Anyone on this network can read failure RCA documents. "
+            "Set dashboard_auth_token in ~/.nengok/config.toml to require an Authorization header.",
+            err=True,
+        )
+
+    if not _parse_bool_env(os.environ.get("NENGOK_PRODUCTION")):
+        return
+
+    problems: list[str] = []
+    if not config.dashboard_auth_token:
+        problems.append(
+            "dashboard_auth_token is unset; set it in ~/.nengok/config.toml or "
+            "via NENGOK_DASHBOARD_AUTH_TOKEN."
+        )
+    if is_local:
+        problems.append(
+            f"bind address '{bind_host}' is localhost-only; pass --listen 0.0.0.0 or set "
+            "NENGOK_DASHBOARD_HOST to expose the service in production."
+        )
+    if problems:
+        typer.echo(
+            "Refusing to start: NENGOK_PRODUCTION=true requires a hardened dashboard.",
+            err=True,
+        )
+        for item in problems:
+            typer.echo(f"  - {item}", err=True)
+        raise typer.Exit(code=2)
+
+
+def _parse_bool_env(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 @app.command()

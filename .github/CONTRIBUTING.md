@@ -221,6 +221,10 @@ Pass `--no-browser` to skip the auto-open.
 
 If `/` returns a JSON hint instead of the UI, the install either skipped the frontend build (look for `NENGOK_SKIP_FRONTEND_BUILD=1` in your env) or `npm` wasn't on PATH. Run `cd frontend && npm install && npm run build`, then restart `nengok dashboard`.
 
+#### Auth and network exposure
+
+The dashboard binds to `127.0.0.1` by default and runs without auth. Pass `--listen 0.0.0.0` to expose it on the LAN and you will get a stderr warning that anyone on the network can read RCA documents. To require a token, set `dashboard_auth_token` in `~/.nengok/config.toml` (or `NENGOK_DASHBOARD_AUTH_TOKEN`); the FastAPI app then rejects `/api/v1/*` requests that lack `Authorization: Bearer <token>`, and the frontend pops a login screen on the first 401 so a reviewer can paste the token from `config.toml`. For Cloud Run set `NENGOK_PRODUCTION=true`; the dashboard refuses to start unless both the token is set and the bind address is not localhost. Override the CORS allowlist with `dashboard_cors_origins` in TOML, or `NENGOK_DASHBOARD_CORS_ORIGINS=https://nengok.example.com,https://staff.example.com`.
+
 #### Frontend development with HMR (recommended)
 
 Use this loop when you're editing anything under `frontend/`: run the Vite dev server in one terminal and the FastAPI server in another. Vite hot-reloads on save, proxies `/api` calls to the FastAPI side, and leaves the pre-built bundle in `nengok/server/static/` untouched.

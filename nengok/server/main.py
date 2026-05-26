@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -28,6 +28,7 @@ from starlette.types import Scope
 
 from nengok import __version__
 from nengok.config import NengokConfig
+from nengok.server.auth import require_dashboard_token
 from nengok.server.routes import approvals, artifacts, clusters, dashboard, experiments
 from nengok.utils.logging import get_logger
 
@@ -73,7 +74,7 @@ def create_app(*, config: NengokConfig) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_origins=list(config.dashboard_cors_origins),
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -81,13 +82,14 @@ def create_app(*, config: NengokConfig) -> FastAPI:
 
     app.state.config = config
 
-    app.include_router(clusters.router, prefix="/api/v1")
-    app.include_router(experiments.router, prefix="/api/v1")
-    app.include_router(approvals.router, prefix="/api/v1")
-    app.include_router(artifacts.router, prefix="/api/v1")
-    app.include_router(dashboard.router, prefix="/api/v1")
+    api_dependencies = [Depends(require_dashboard_token)]
+    app.include_router(clusters.router, prefix="/api/v1", dependencies=api_dependencies)
+    app.include_router(experiments.router, prefix="/api/v1", dependencies=api_dependencies)
+    app.include_router(approvals.router, prefix="/api/v1", dependencies=api_dependencies)
+    app.include_router(artifacts.router, prefix="/api/v1", dependencies=api_dependencies)
+    app.include_router(dashboard.router, prefix="/api/v1", dependencies=api_dependencies)
 
-    @app.get("/api/v1/health")
+    @app.get("/api/v1/health", dependencies=api_dependencies)
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
 
