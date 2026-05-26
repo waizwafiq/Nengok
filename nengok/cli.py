@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from nengok import __version__
 from nengok.config import DEFAULT_CONFIG_PATH, NengokConfig
+from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import configure_logging, get_logger
 
 app = typer.Typer(
@@ -104,7 +105,11 @@ def run(
         run_preflight(config, echo=lambda msg: typer.echo(msg, err=True))
 
     orchestrator = Orchestrator(config=config)
-    result = orchestrator.run_once(dry_run=dry_run)
+    try:
+        result = orchestrator.run_once(dry_run=dry_run)
+    except GeminiCallError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
     typer.echo(
         f"Cycle complete: {result.clusters_detected} clusters detected, "
@@ -141,7 +146,10 @@ def watch(
     typer.echo(f"Watching project '{config.project_identifier}' every {interval_seconds}s. Ctrl-C to stop.")
     try:
         while True:
-            orchestrator.run_once()
+            try:
+                orchestrator.run_once()
+            except GeminiCallError as exc:
+                typer.echo(f"Cycle skipped: {exc}", err=True)
             time.sleep(interval_seconds)
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
