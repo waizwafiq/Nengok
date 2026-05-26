@@ -29,7 +29,7 @@ def _make_config(tmp_path: Path) -> NengokConfig:
         config_path=tmp_path / "missing.toml",
         phoenix_base_url="http://localhost:6006",
         phoenix_api_key=None,
-        google_api_key=None,
+        google_api_key="AIzaTEST",
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
         mcp_startup_timeout=2.0,

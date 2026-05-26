@@ -13,6 +13,7 @@ def _config() -> NengokConfig:
     return NengokConfig.load(
         config_path=Path("/nonexistent-nengok-config.toml"),
         phoenix_base_url="http://localhost:6006",
+        google_api_key="AIzaTEST",
     )
 
 
