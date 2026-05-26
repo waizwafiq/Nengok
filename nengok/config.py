@@ -114,6 +114,11 @@ class NengokConfig:
 
     metrics_enabled: bool = False
 
+    redaction_enabled: bool = True
+    redaction_rules: list[dict[str, str]] = field(default_factory=list)
+    redaction_default_rules: list[str] | None = None
+    redactor_callable: str | None = None
+
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
         """
@@ -243,6 +248,8 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_MCP_ENABLED": "mcp_enabled",
         "NENGOK_MCP_NPX_COMMAND": "mcp_npx_command",
         "NENGOK_MCP_PACKAGE": "mcp_package",
+        "NENGOK_REDACTION_ENABLED": "redaction_enabled",
+        "NENGOK_REDACTOR_CALLABLE": "redactor_callable",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
@@ -251,7 +258,7 @@ def _read_env() -> dict[str, Any]:
             continue
         if config_key == "dashboard_port":
             out[config_key] = int(value)
-        elif config_key == "mcp_enabled":
+        elif config_key in {"mcp_enabled", "redaction_enabled"}:
             out[config_key] = _parse_bool(value)
         else:
             out[config_key] = value
