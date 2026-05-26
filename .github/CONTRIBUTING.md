@@ -285,6 +285,12 @@ CI rejects suppressions (`# noqa`, `# type: ignore`, `// eslint-disable`, `as an
 
 Anything that talks to Phoenix or Gemini raises a typed exception from [nengok/errors.py](../nengok/errors.py), not a bare `RuntimeError`. The CLI catches `NengokError` once and dispatches to a per-class hint, so the operator sees `Error (missing-api-key): ...` with the env var to set, or `Error (gemini-quota): ...` with the retry delay and quotaId, instead of a traceback. When you add a new call site, follow the same pattern: pick the closest existing class (`MissingApiKeyError`, `OptionalDependencyError`, `BaselinePromptError`, `AgentRunnerLoadError`, `PhoenixConnectionError`, `PhoenixProjectNotFoundError`), include the exact fix in the message (env var name, config field, install command, or URL), and pass structured context as keyword args so the dispatcher can render it. Add a new subclass only if no existing one fits, and register a label for it in `nengok.cli._error_label`.
 
+### Redacting span text before it leaves the process
+
+Every Gemini call site that embeds span content (input/output values, exemplar bodies) and every on-disk artifact that quotes a trace must pass the text through `Redactor` first. The defaults scrub emails, Google and AWS keys, bearer tokens, `password=`/`secret=` fields, credit-card numbers, SSNs, US phone numbers, IPv4 and IPv6 addresses. The full threat model lives in [docs/security.md](../docs/security.md).
+
+When you add a new stage that ships span text outward, accept an optional `redactor: Redactor | None` on the dataclass and resolve it with `self.redactor or Redactor.from_config(self.config)` inside the call. The orchestrator constructs one `Redactor` per cycle from `NengokConfig` and threads it into every stage; tests can override it by passing a custom instance. Disable redaction only with `config.redaction_enabled = false` and only when you have a stricter scrubber upstream. The `config.redactor_callable` escape hatch (dotted path) replaces the default rules with a user-supplied function for teams that already maintain an in-house scrubber.
+
 ### Tests that need an optional extra
 
 SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12, so we catch the case where core SDK code accidentally requires an optional dependency. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
