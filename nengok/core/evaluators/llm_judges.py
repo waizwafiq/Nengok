@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nengok.config import NengokConfig
+from nengok.errors import OptionalDependencyError
 
 
 @dataclass(frozen=True)
@@ -70,8 +71,9 @@ def _ensure_phoenix_judge(spec: JudgeSpec) -> Any:
     try:
         from phoenix.evals import LLM, ClassificationEvaluator
     except ImportError as exc:  # pragma: no cover - import guard
-        raise RuntimeError(
-            "arize-phoenix-evals is not installed. " "Install it via `pip install nengok[phoenix]`."
+        raise OptionalDependencyError(
+            "arize-phoenix-evals is not installed but is required to score LLM-as-Judge evaluators.",
+            install_hint="pip install nengok[phoenix]",
         ) from exc
 
     return ClassificationEvaluator(
