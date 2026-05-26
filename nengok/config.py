@@ -119,6 +119,8 @@ def _read_env() -> dict[str, Any]:
         "PHOENIX_API_KEY": "phoenix_api_key",
         "GOOGLE_API_KEY": "google_api_key",
         "NENGOK_PROJECT": "project_identifier",
+        "NENGOK_DIAGNOSER_MODEL": "diagnoser_model",
+        "NENGOK_JUDGE_MODEL": "judge_model",
         "NENGOK_ARTIFACTS_DIR": "artifacts_dir",
         "NENGOK_STATE_DB": "state_db_path",
         "NENGOK_DASHBOARD_PORT": "dashboard_port",

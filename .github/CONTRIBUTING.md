@@ -107,6 +107,31 @@ Open `.env` and fill in `GOOGLE_API_KEY` (and `PHOENIX_API_KEY` if your Phoenix 
 
 Nengok and the sample agent both auto-load `.env` from the current directory at startup (via `python-dotenv`), so you do not need to `export` anything in your shell. Run every command from the repo root and the env vars come along for free.
 
+#### Swapping the LLMs
+
+The four Gemini models in the loop are all overridable via environment variables, so you can run the SDK against a different snapshot (or a non-public preview) without editing source or `~/.nengok/config.toml`:
+
+| Env var | Default | What it drives |
+|---|---|---|
+| `NENGOK_DIAGNOSER_MODEL` | `gemini-3.1-pro-preview` | Clusterer + Hypothesizer + Prompt Proposer + Test Generator inside `nengok/core/` |
+| `NENGOK_JUDGE_MODEL` | `gemini-3-flash-preview` | LLM-as-Judge evaluators wired through `nengok/core/evaluators/llm_judges.py` |
+| `SAMPLE_AGENT_MODEL` | `gemini-2.5-flash` | The Travel Planner demo agent in `sample_agent/agent.py` |
+| `QA_AGENT_MODEL` | `gemini-2.5-flash` | The retrieval-augmented Q&A agent in `sample_agent/qa_agent/agent.py` |
+
+The two `NENGOK_*` vars feed `NengokConfig.diagnoser_model` and `NengokConfig.judge_model` through `_read_env()` in `nengok/config.py`, so they win over the on-disk TOML and lose to constructor overrides. The two sample-agent vars are read directly inside each agent's `build_*` / `answer_*` function. The defaults assume Gemini; swapping in a non-Gemini model requires more than an env-var bump because the agents call `google-genai` directly.
+
+If you set one of these to a string Google does not recognise, every Gemini call routes through `nengok/utils/gemini.py::call_gemini` and the SDK raises `InvalidGeminiModelError` (or `GeminiAuthError` / `GeminiQuotaError` for 401/403/429) with a message that names the env var you configured. The error replaces the raw `google.genai.errors.ClientError` stack trace, so a typo surfaces as `Clusterer: model 'gemini-1.5-pro' is not a valid Gemini model. Override via the NENGOK_DIAGNOSER_MODEL env var.` instead of a 404 deep inside the call site.
+
+#### When Gemini says 429
+
+The free tier of `gemini-2.5-flash` is capped at 20 requests per day per project, which a few back-to-back `python -m sample_agent.seed --count 15` invocations will burn through. When the API answers 429, Nengok behaves differently depending on the entry point:
+
+- **`python -m sample_agent.seed`** parses the API-suggested retry delay out of the `RetryInfo` block, sleeps that long plus one second of buffer, and retries the same query once. If the retry also 429s, the run is marked failed and the loop continues to the next query. The summary line at the end reports the surviving count.
+- **`nengok run`** prints a one-line `Error: ...` with the retry delay and quota id, then exits 1. The cluster pipeline can't usefully resume mid-cycle, so the cleanest path is to wait and re-run.
+- **`nengok watch`** prints a one-line `Cycle skipped: ...` and waits for the next interval. The heartbeat stays alive.
+
+To raise the cap, enable billing at <https://ai.dev/rate-limit> and the free-tier quotaId (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) stops applying. To keep using free tier but make Nengok behave, point `NENGOK_DIAGNOSER_MODEL` and `SAMPLE_AGENT_MODEL` at different models so the daily caps don't share a bucket.
+
 ### 4. Start a local Phoenix (optional, for end-to-end work)
 
 If you already have Phoenix Cloud or a remote Phoenix, point `PHOENIX_BASE_URL` and `PHOENIX_API_KEY` at it in `.env` and skip this step.
@@ -124,23 +149,29 @@ Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for 
 
 ### 5. Generate traces with the sample agent
 
-In a new terminal with the venv activated, run the Travel Planner demo a few times with all failure modes injected:
+In a new terminal with the venv activated, run the seed helper to fire several Travel Planner runs with every failure mode injected:
 
 **Windows:**
 
 ```bat
 .venv\Scripts\activate
-python -m sample_agent.agent --inject all
+python -m sample_agent.seed --count 5
 ```
 
 **macOS / Linux:**
 
 ```bash
 source .venv/bin/activate
-python -m sample_agent.agent --inject all
+python -m sample_agent.seed --count 5
 ```
 
-Run that command three or four times. The `--inject all` flag turns on the three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout); each invocation flips the mock tool outputs into their broken shapes, and the clusterer needs roughly three before it can name a pattern. Without `--inject all`, the agent runs cleanly and the clusterer has nothing to bite on.
+`sample_agent.seed` rotates through a small set of queries (so the clusters look like real traffic rather than identical replays), turns on all three demo failure modes (flights schema drift, weather unit mismatch, hotels timeout), and prints the resulting Phoenix project URL when it finishes. The clusterer needs roughly three anomalous traces before it can name a pattern, so `--count 5` is the floor; bump it higher if you want denser clusters. Pass `--inject flights|weather|hotels|none` to scope the failure modes, or `--query "..."` to pin every run to one prompt.
+
+If you want a single one-shot run with no batching, the underlying agent still works directly:
+
+```bash
+python -m sample_agent.agent --inject all
+```
 
 `build_itinerary` now invokes Gemini via `google-genai`, so `phoenix.otel.register(auto_instrument=True)` has a real LLM call to wrap and the `openinference-instrumentation-google-genai` package emits spans on every run. Each invocation creates or updates the `travel-planner-agent` project in Phoenix, and `nengok run` against that project should pull anomalous spans without 404ing.
 
@@ -243,6 +274,27 @@ The `pip install -e . --no-deps` re-fires the hatch hook so the new `dist/` copi
 The architectural rules — code-first evaluators, no data egress, human-in-the-loop, Phoenix SDK for writes / MCP for reads, pinned Phoenix versions — are summarized in the README. Read those before opening a non-trivial PR.
 
 CI rejects suppressions (`# noqa`, `# type: ignore`, `// eslint-disable`, `as any`). If a rule fires, fix the root cause.
+
+### Tests that need an optional extra
+
+SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12, so we catch the case where core SDK code accidentally requires an optional dependency. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
+
+A test file that imports `google.genai`, `phoenix.client.*`, or any other module from an optional extra at module top breaks collection in the minimal-deps job. Guard the import with `pytest.importorskip` so the test skips cleanly there and runs for real in the full-extras job:
+
+```python
+import pytest
+
+genai_errors = pytest.importorskip(
+    "google.genai.errors",
+    reason="google-genai not installed; this test needs the gemini extra.",
+)
+
+from nengok.utils.gemini import call_gemini
+```
+
+The `tests/**` per-file ignore in `pyproject.toml` allows imports below an `importorskip` call (otherwise ruff E402 would fire). Outside `tests/`, imports stay at the top. The relaxation is test-only and is the project's one structural exception to the no-suppressions rule above.
+
+The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments"` before pytest, so if either extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
 
 ## Phoenix API Cheatsheet
 

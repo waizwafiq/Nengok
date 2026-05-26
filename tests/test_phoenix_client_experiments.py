@@ -102,6 +102,49 @@ def test_run_experiment_wires_runner_and_pass_rate(
     assert all(call[1] == "CANDIDATE-PROMPT" for call in runner_calls)
 
 
+def test_run_experiment_accepts_phoenix_dataclass_evaluation_runs(
+    experiment_config: NengokConfig,
+    runner_calls: list[tuple[dict[str, Any], str]],
+) -> None:
+    """Regression: Phoenix returns ExperimentEvaluationRun dataclasses, not dicts."""
+    del runner_calls
+    from datetime import UTC, datetime
+
+    experiments_module = pytest.importorskip(
+        "phoenix.client.resources.experiments",
+        reason="phoenix extra not installed; this regression test needs the real dataclass.",
+    )
+    ExperimentEvaluationRun = experiments_module.ExperimentEvaluationRun
+
+    base = _stub_ran_experiment()
+    now = datetime.now(UTC)
+    base["evaluation_runs"] = [
+        ExperimentEvaluationRun(
+            experiment_run_id=run["experiment_run_id"],
+            start_time=now,
+            end_time=now,
+            name=run["name"],
+            annotator_kind="CODE",
+            result=run["result"],
+        )
+        for run in base["evaluation_runs"]
+    ]
+
+    wrapper = PhoenixWrapper(experiment_config)
+    wrapper._client = _FakeClient(base)
+
+    result = wrapper.run_experiment(
+        dataset_ref={"name": "ds"},
+        prompt="P",
+        evaluators=[output_is_present],
+        experiment_name="exp-1",
+        dry_run=0,
+    )
+
+    assert result.pass_rate == 1.0
+    assert len(result.per_case) == 2
+
+
 def test_run_experiment_passes_dry_run_and_evaluator_set(
     experiment_config: NengokConfig,
     runner_calls: list[tuple[dict[str, Any], str]],
@@ -211,12 +254,12 @@ def test_run_golden_comparison_creates_dataset_when_missing(
     assert baseline.pass_rate == 1.0
     assert fix.pass_rate == 1.0
     datasets = wrapper._client.datasets
-    assert datasets.get_calls == ["travel-planner-golden-v1"]
+    assert datasets.get_calls == ["travel-planner-golden-v2"]
     assert len(datasets.create_calls) == 1
-    assert datasets.create_calls[0]["name"] == "travel-planner-golden-v1"
+    assert datasets.create_calls[0]["name"] == "travel-planner-golden-v2"
     assert {call["experiment_name"] for call in wrapper._client.experiments.calls} == {
-        "golden-baseline-v1",
-        "golden-fix-v1",
+        "golden-baseline-v2",
+        "golden-fix-v2",
     }
 
 

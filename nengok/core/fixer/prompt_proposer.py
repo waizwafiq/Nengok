@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 from nengok.config import NengokConfig
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
 from nengok.phoenix.client import PhoenixWrapper
+from nengok.utils.gemini import call_gemini
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -142,15 +143,17 @@ class PromptProposer:
                 "or google_api_key in the Nengok config."
             )
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
+        return call_gemini(
+            client,
             model=self.config.diagnoser_model,
             contents=[{"role": "user", "parts": [{"text": prompt}]}],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=_GeminiProposal,
             ),
+            env_var_hint="NENGOK_DIAGNOSER_MODEL",
+            role_hint="Prompt Proposer",
         )
-        return response.text or ""
 
 
 def _strip_code_fence(text: str) -> str:

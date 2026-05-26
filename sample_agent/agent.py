@@ -17,10 +17,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from nengok.utils.gemini import call_gemini
 from sample_agent.tools import failure_modes, flights, hotels, weather
 
 PROMPT_PATH = Path(__file__).parent / "prompts" / "travel_planner.md"
 DEFAULT_MODEL = "gemini-2.5-flash"
+PHOENIX_PROJECT_NAME = "travel-planner-agent"
 
 
 def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
@@ -70,9 +72,12 @@ def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
     )
 
     client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-    response = client.models.generate_content(
+    itinerary = call_gemini(
+        client,
         model=os.environ.get("SAMPLE_AGENT_MODEL", DEFAULT_MODEL),
         contents=[{"role": "user", "parts": [{"text": system_prompt + "\n\n" + user_prompt}]}],
+        env_var_hint="SAMPLE_AGENT_MODEL",
+        role_hint="Travel Planner",
     )
 
     return {
@@ -81,7 +86,7 @@ def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
         "weather": weather_data,
         "hotels": hotels_data,
         "hotels_error": hotels_error,
-        "itinerary": response.text,
+        "itinerary": itinerary,
         "prompt_source": "injected" if prompt is not None else PROMPT_PATH.name,
     }
 
@@ -142,7 +147,7 @@ def _maybe_register_phoenix_tracing() -> None:
             'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
         ) from exc
 
-    tracer_provider = register(project_name="travel-planner-agent", auto_instrument=True)
+    tracer_provider = register(project_name=PHOENIX_PROJECT_NAME, auto_instrument=True)
 
     # `auto_instrument=True` relies on package metadata to pick up
     # openinference-instrumentation-google-genai, which has been flaky when
