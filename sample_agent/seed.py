@@ -22,12 +22,16 @@ from urllib.parse import urljoin
 
 from dotenv import load_dotenv
 
+from nengok.utils.gemini import GeminiQuotaError
 from sample_agent.agent import (
     PHOENIX_PROJECT_NAME,
     _maybe_register_phoenix_tracing,
     build_itinerary,
 )
 from sample_agent.tools import failure_modes
+
+QUOTA_RETRY_BUFFER_SECONDS = 1.0
+QUOTA_RETRY_FALLBACK_SECONDS = 30.0
 
 DEFAULT_QUERIES: tuple[str, ...] = (
     "Plan a 3-day trip from KL to Tokyo",
@@ -46,13 +50,29 @@ def _project_url(base_url: str, project_name: str) -> str:
 
 
 def _run_once(query: str, run_index: int, total: int) -> bool:
+    """Fire one run. On a 429 quota error, sleep the API-suggested delay and retry once."""
     print(f"[{run_index}/{total}] {query}", flush=True)
     try:
         build_itinerary(query)
+        return True
+    except GeminiQuotaError as exc:
+        wait_seconds = (exc.retry_after_seconds or QUOTA_RETRY_FALLBACK_SECONDS) + QUOTA_RETRY_BUFFER_SECONDS
+        quota_label = f" [{exc.quota_id}]" if exc.quota_id else ""
+        print(
+            f"  quota exhausted{quota_label}; pausing {wait_seconds:.0f}s and retrying",
+            file=sys.stderr,
+            flush=True,
+        )
+        time.sleep(wait_seconds)
+        try:
+            build_itinerary(query)
+            return True
+        except Exception as retry_exc:
+            print(f"  retry failed: {retry_exc}", file=sys.stderr, flush=True)
+            return False
     except Exception as exc:
         print(f"  failed: {exc}", file=sys.stderr, flush=True)
         return False
-    return True
 
 
 def main() -> int:
