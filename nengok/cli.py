@@ -7,10 +7,12 @@ Sub-commands:
     nengok run        Execute one full Observe -> Diagnose -> Fix -> Verify cycle
     nengok watch      Continuous heartbeat mode (single-process, polls on an interval)
     nengok dashboard  Launch the local FastAPI + Vite approval UI
+    nengok doctor     Run a read-only health check across the install
 """
 
 from __future__ import annotations
 
+import json as _json
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -21,6 +23,7 @@ from dotenv import load_dotenv
 
 from nengok import __version__
 from nengok.config import DEFAULT_CONFIG_PATH, NengokConfig
+from nengok.diagnostics import DEFAULT_PROBES, Probe, ProbeResult, ProbeStatus
 from nengok.errors import ConfigError
 from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import configure_logging, get_logger
@@ -406,6 +409,89 @@ def dashboard(
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
     uvicorn.run(fastapi_app, host=host, port=port, log_level="info")
+
+
+@app.command()
+def doctor(
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Treat warnings as failures (exit 1 on any warn)."),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON instead of the text report."),
+    ] = False,
+) -> None:
+    """Run a read-only health check across the install."""
+    try:
+        config = NengokConfig.load()
+    except ConfigError as exc:
+        if json_output:
+            failure = ProbeResult(
+                name="config",
+                status=ProbeStatus.FAIL,
+                detail=str(exc),
+                fix_hint="Run `nengok init` to write a working ~/.nengok/config.toml.",
+            )
+            _print_doctor_json(version=__version__, results=[failure])
+        else:
+            typer.echo(f"Nengok v{__version__} health check")
+            typer.echo(f"  [fail] config: {exc}")
+            typer.echo("    Fix: run `nengok init` to write a working ~/.nengok/config.toml.")
+        raise typer.Exit(code=1) from exc
+
+    results = _run_probes(config=config, probes=DEFAULT_PROBES)
+
+    if json_output:
+        _print_doctor_json(version=__version__, results=results)
+    else:
+        _print_doctor_text(version=__version__, results=results)
+
+    exit_code = _doctor_exit_code(results=results, strict=strict)
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)
+
+
+def _run_probes(*, config: NengokConfig, probes: tuple[Probe, ...]) -> list[ProbeResult]:
+    results: list[ProbeResult] = []
+    for probe in probes:
+        try:
+            results.append(probe(config))
+        except Exception as exc:
+            results.append(
+                ProbeResult(
+                    name=getattr(probe, "__name__", "probe"),
+                    status=ProbeStatus.FAIL,
+                    detail=f"probe raised {exc.__class__.__name__}: {exc}",
+                    fix_hint="Re-run `nengok doctor -v` for the full traceback.",
+                )
+            )
+    return results
+
+
+def _print_doctor_text(*, version: str, results: list[ProbeResult]) -> None:
+    typer.echo(f"Nengok v{version} health check")
+    for result in results:
+        marker = result.status.value
+        typer.echo(f"  [{marker}] {result.name}: {result.detail}")
+        if result.status != ProbeStatus.OK and result.fix_hint:
+            typer.echo(f"    Fix: {result.fix_hint}")
+
+
+def _print_doctor_json(*, version: str, results: list[ProbeResult]) -> None:
+    payload = {
+        "nengok_version": version,
+        "results": [r.to_dict() for r in results],
+    }
+    typer.echo(_json.dumps(payload, indent=2))
+
+
+def _doctor_exit_code(*, results: list[ProbeResult], strict: bool) -> int:
+    if any(r.failed for r in results):
+        return 1
+    if strict and any(r.warned for r in results):
+        return 1
+    return 0
 
 
 def _load_config(**overrides: Any) -> NengokConfig:
