@@ -95,10 +95,16 @@ def run(
         bool,
         typer.Option("--skip-preflight", help="Skip the MCP project existence check."),
     ] = False,
+    log_format: Annotated[
+        str,
+        typer.Option("--log-format", help="Log output format: text (default) or json."),
+    ] = "text",
 ) -> None:
     """Execute one full Observe -> Diagnose -> Fix -> Verify cycle."""
     from nengok.core.orchestrator import Orchestrator
     from nengok.phoenix.preflight import run_preflight
+
+    configure_logging(json_format=log_format == "json")
 
     config = _load_config(project_identifier=project)
     if not skip_preflight:
@@ -128,6 +134,10 @@ def watch(
     project: Annotated[
         str | None, typer.Option("--project", help="Override the configured Phoenix project.")
     ] = None,
+    log_format: Annotated[
+        str,
+        typer.Option("--log-format", help="Log output format: json (default) or text."),
+    ] = "json",
 ) -> None:
     """
     Continuously run cycles on a fixed interval.
@@ -141,6 +151,8 @@ def watch(
     from nengok.core.circuit_breaker import CircuitBreaker
     from nengok.core.incidents import write_incident
     from nengok.core.orchestrator import Orchestrator
+
+    configure_logging(json_format=log_format == "json")
 
     config = _load_config(project_identifier=project)
     orchestrator = Orchestrator(config=config)

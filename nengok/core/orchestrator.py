@@ -14,6 +14,7 @@ for this self-observability.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar
@@ -41,7 +42,7 @@ from nengok.core.verifier.gate import VerifierGate
 from nengok.errors import PhoenixTimeoutError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.state.store import StateStore
-from nengok.utils.logging import get_logger
+from nengok.utils.logging import get_logger, run_context
 from nengok.utils.tracing import get_tracer, register_meta_tracer, set_attributes
 
 logger = get_logger(__name__)
@@ -75,13 +76,21 @@ class Orchestrator:
         self._ensure_traced()
         tracer = get_tracer()
 
+        run_id = uuid.uuid4().hex[:12]
         started_at = datetime.now(UTC)
-        logger.info("Cycle start (project=%s, dry_run=%s)", self.config.project_identifier, dry_run)
 
         cost_tracker = self._fresh_cost_tracker()
         self._attach_cost_tracker(cost_tracker)
 
-        with tracer.start_as_current_span("nengok.cycle") as cycle_span:
+        with (
+            run_context(run_id=run_id),
+            tracer.start_as_current_span("nengok.cycle") as cycle_span,
+        ):
+            logger.info(
+                "Cycle start (project=%s, dry_run=%s)",
+                self.config.project_identifier,
+                dry_run,
+            )
             set_attributes(
                 cycle_span,
                 {
@@ -90,7 +99,10 @@ class Orchestrator:
                 },
             )
 
-            with tracer.start_as_current_span("observer") as observer_span:
+            with (
+                run_context(stage="observer"),
+                tracer.start_as_current_span("observer") as observer_span,
+            ):
                 self.current_stage = "observer"
                 spans = self._sampler.sample()
                 anomalies = self._anomaly_filter.filter(spans)
@@ -115,7 +127,10 @@ class Orchestrator:
 
             baseline_prompt = self._prompt_proposer.load_baseline_prompt()
 
-            with tracer.start_as_current_span("diagnoser") as diagnoser_span:
+            with (
+                run_context(stage="diagnoser"),
+                tracer.start_as_current_span("diagnoser") as diagnoser_span,
+            ):
                 self.current_stage = "diagnoser"
                 raw_clusters = self._clusterer.cluster(new_anomalies)
                 clusters: list[Cluster] = []
@@ -152,7 +167,10 @@ class Orchestrator:
                 cluster_attrs = _cluster_span_attrs(cluster, signal_counts)
 
                 try:
-                    with tracer.start_as_current_span("fixer") as fixer_span:
+                    with (
+                        run_context(stage="fixer", cluster_id=cluster.cluster_id),
+                        tracer.start_as_current_span("fixer") as fixer_span,
+                    ):
                         self.current_stage = "fixer"
                         set_attributes(fixer_span, cluster_attrs)
                         cases = self._test_generator.generate(cluster)
@@ -166,7 +184,10 @@ class Orchestrator:
                         result = self._experiment_runner.run(cluster=cluster, cases=cases, proposal=proposal)
                         self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
 
-                    with tracer.start_as_current_span("verifier") as verifier_span:
+                    with (
+                        run_context(stage="verifier", cluster_id=cluster.cluster_id),
+                        tracer.start_as_current_span("verifier") as verifier_span,
+                    ):
                         self.current_stage = "verifier"
                         set_attributes(verifier_span, cluster_attrs)
                         verification = self._gate.evaluate(result)
