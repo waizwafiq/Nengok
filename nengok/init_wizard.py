@@ -78,15 +78,15 @@ def prompt_phoenix_choice(
     choice = ask("Choice", default=default_choice, show_default=True).strip()
 
     if choice == "1":
-        api_key = ask("Phoenix Cloud API key", hide_input=True)
-        return PHOENIX_CLOUD_BASE_URL, api_key
+        cloud_key = ask("Phoenix Cloud API key", hide_input=True)
+        return PHOENIX_CLOUD_BASE_URL, cloud_key
     if choice == "2":
         base_url = ask("Self-hosted Phoenix base URL").strip()
-        api_key_raw = ask(
+        self_hosted_key_raw = ask(
             "Phoenix API key (leave blank if your Phoenix has no auth)", default="", show_default=False
         )
-        api_key = api_key_raw.strip() or None
-        return base_url, api_key
+        self_hosted_key: str | None = self_hosted_key_raw.strip() or None
+        return base_url, self_hosted_key
     return DEFAULT_LOCAL_PHOENIX_URL, None
 
 
