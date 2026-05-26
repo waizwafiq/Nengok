@@ -14,11 +14,19 @@ resulting object through the orchestrator.
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+from nengok.errors import ConfigError
+
+logger = logging.getLogger(__name__)
+
+SAMPLE_AGENT_PROJECT_NAME = "travel-planner-agent"
 
 DEFAULT_CONFIG_PATH = Path.home() / ".nengok" / "config.toml"
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
@@ -120,7 +128,7 @@ class NengokConfig:
         merged: dict[str, Any] = {**file_values, **env_values, **overrides}
 
         if "phoenix_base_url" not in merged:
-            raise ValueError(
+            raise ConfigError(
                 "Phoenix base URL not configured. "
                 "Run `nengok init --phoenix-url <url>` or set PHOENIX_BASE_URL."
             )
@@ -130,7 +138,84 @@ class NengokConfig:
             if value is not None and not isinstance(value, Path):
                 merged[path_key] = Path(str(value))
 
-        return cls(**merged)
+        config = cls(**merged)
+        config.validate()
+        return config
+
+    def validate(self) -> None:
+        """
+        Reject any combination that will fail downstream.
+
+        Run at the end of `load()` and re-runnable on its own for tests.
+        Surfaces missing secrets, malformed URLs, unreadable files, and
+        out-of-range thresholds as `ConfigError` with a copy-paste hint.
+        """
+        if not self.google_api_key:
+            raise ConfigError(
+                "GOOGLE_API_KEY is not set. "
+                "Run `export GOOGLE_API_KEY=<your key>` or add "
+                "`google_api_key = '<your key>'` to ~/.nengok/config.toml. "
+                "Get a key at https://aistudio.google.com/app/apikey."
+            )
+
+        if not self.phoenix_base_url:
+            raise ConfigError(
+                "Phoenix base URL not configured. "
+                "Run `nengok init --phoenix-url <url>` or set PHOENIX_BASE_URL."
+            )
+
+        parsed = urlparse(self.phoenix_base_url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ConfigError(
+                f"phoenix_base_url '{self.phoenix_base_url}' is not a valid URL. "
+                "Expected a value like 'http://localhost:6006' or 'https://app.phoenix.arize.com'."
+            )
+
+        if not self.project_identifier:
+            raise ConfigError(
+                "phoenix_project_name (project_identifier) is empty. "
+                "Set it via --project, NENGOK_PROJECT, or the config file."
+            )
+
+        if self.project_identifier == SAMPLE_AGENT_PROJECT_NAME:
+            logger.warning(
+                "project_identifier is set to the bundled sample agent project "
+                "'%s'. If you are monitoring a real agent, override "
+                "phoenix_project_name in ~/.nengok/config.toml.",
+                SAMPLE_AGENT_PROJECT_NAME,
+            )
+
+        if self.baseline_prompt_path is not None:
+            path = self.baseline_prompt_path
+            if not path.exists():
+                raise ConfigError(
+                    f"baseline_prompt_path '{path}' does not exist. "
+                    "Point it at a readable .md or .txt prompt file, or unset it."
+                )
+            if not path.is_file():
+                raise ConfigError(f"baseline_prompt_path '{path}' is not a file.")
+            if not os.access(path, os.R_OK):
+                raise ConfigError(f"baseline_prompt_path '{path}' is not readable by the current user.")
+
+        agent_runner = getattr(self, "agent_runner", None)
+        if agent_runner:
+            if ":" not in agent_runner or agent_runner.count(":") != 1:
+                raise ConfigError(
+                    f"agent_runner '{agent_runner}' is malformed. "
+                    "Expected `module.path:ClassName` (e.g. "
+                    "`nengok.runners.sample_agent_runner:SampleAgentRunner`)."
+                )
+            module_part, class_part = agent_runner.split(":", 1)
+            if not module_part or not class_part:
+                raise ConfigError(
+                    f"agent_runner '{agent_runner}' is malformed. " "Expected `module.path:ClassName`."
+                )
+
+        for name, value, lo, hi in _range_checks(self):
+            if not lo <= value <= hi:
+                raise ConfigError(
+                    f"{name}={value} is out of range. " f"Expected a value between {lo} and {hi}."
+                )
 
 
 def _read_config_file(path: Path) -> dict[str, Any]:
@@ -174,3 +259,36 @@ def _read_env() -> dict[str, Any]:
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _range_checks(cfg: NengokConfig) -> list[tuple[str, float, float, float]]:
+    """
+    Return `(name, value, lower, upper)` tuples for every bounded knob.
+
+    Each entry is checked against `lo <= value <= hi`. Bounds are wide
+    enough that legitimate tuning passes, narrow enough that fat-finger
+    typos (e.g. a 0.5-second Gemini timeout, a negative span limit) are
+    rejected before the orchestrator starts.
+    """
+    return [
+        ("span_limit", cfg.span_limit, 1, 10_000),
+        ("min_cluster_size", cfg.min_cluster_size, 1, 1_000),
+        ("regression_pass_threshold", cfg.regression_pass_threshold, 0.0, 1.0),
+        ("golden_regression_limit", cfg.golden_regression_limit, 0.0, 1.0),
+        ("dry_run_samples", cfg.dry_run_samples, 1, 100),
+        ("cluster_trace_char_budget", cfg.cluster_trace_char_budget, 100, 1_000_000),
+        ("dashboard_port", cfg.dashboard_port, 1, 65_535),
+        ("mcp_startup_timeout", cfg.mcp_startup_timeout, 1.0, 600.0),
+        ("mcp_request_timeout", cfg.mcp_request_timeout, 1.0, 600.0),
+        ("gemini_timeout_seconds", cfg.gemini_timeout_seconds, 5.0, 600.0),
+        ("gemini_max_retries", cfg.gemini_max_retries, 0, 10),
+        ("gemini_min_retry_backoff_seconds", cfg.gemini_min_retry_backoff_seconds, 0.0, 60.0),
+        ("phoenix_read_timeout_seconds", cfg.phoenix_read_timeout_seconds, 1.0, 600.0),
+        ("phoenix_write_timeout_seconds", cfg.phoenix_write_timeout_seconds, 1.0, 600.0),
+        ("phoenix_experiment_timeout_seconds", cfg.phoenix_experiment_timeout_seconds, 1.0, 3_600.0),
+        ("gemini_cycle_token_budget", cfg.gemini_cycle_token_budget, 1_000, 10_000_000),
+        ("gemini_input_dollars_per_million", cfg.gemini_input_dollars_per_million, 0.0, 1_000.0),
+        ("gemini_output_dollars_per_million", cfg.gemini_output_dollars_per_million, 0.0, 1_000.0),
+        ("circuit_breaker_backoff_seconds", cfg.circuit_breaker_backoff_seconds, 1, 86_400),
+        ("circuit_breaker_consecutive_failures", cfg.circuit_breaker_consecutive_failures, 1, 100),
+    ]
