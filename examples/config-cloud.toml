@@ -1,0 +1,145 @@
+# Nengok configuration: Phoenix Cloud + bundled sample agent.
+#
+# Use this template when your traces live in Phoenix Cloud at
+# app.phoenix.arize.com. The defaults below match the bundled
+# travel-planner sample agent, so the demo works once you fill in the
+# two required keys.
+#
+# Every knob the SDK reads is listed below. Commented lines show the
+# default value; uncomment and edit to override.
+
+[nengok]
+
+# --- Required: Phoenix Cloud -------------------------------------------------
+
+# Phoenix Cloud base URL. Leave as-is unless your tenant is on a
+# regional endpoint.
+phoenix_base_url = "https://app.phoenix.arize.com"
+
+# Phoenix Cloud API key. Required for any non-local Phoenix. Prefer
+# setting PHOENIX_API_KEY in the environment so the key never lands
+# in version control.
+# phoenix_api_key = "..."
+
+# --- Required: Gemini ---------------------------------------------------------
+
+# Gemini key drives the diagnoser and the LLM-as-Judge evaluators.
+# Get one at https://aistudio.google.com/app/apikey. Set GOOGLE_API_KEY
+# in the environment if you would rather not commit the key to disk.
+# google_api_key = "AIza..."
+
+# --- Project + monitored agent -----------------------------------------------
+
+# Phoenix project the Observer pulls spans from. The bundled sample
+# agent writes to `travel-planner-agent`. Override once you point
+# Nengok at your own agent.
+project_identifier = "travel-planner-agent"
+
+# Dotted path to the monitored agent runner (`module.path:ClassName`).
+# When unset, the orchestrator uses the bundled travel-planner runner.
+# agent_runner = "nengok.runners.sample_agent_runner:SampleAgentRunner"
+
+# Baseline prompt the fixer diffs proposals against. Point this at
+# the prompt file you want Nengok to manage.
+# baseline_prompt_path = "sample_agent/prompts/travel_planner.md"
+
+# --- Models -------------------------------------------------------------------
+
+# Gemini model that drives the clusterer, hypothesizer, prompt
+# proposer, and test generator.
+# diagnoser_model = "gemini-3.1-pro-preview"
+
+# Gemini model the judge evaluators call.
+# judge_model = "gemini-3-flash-preview"
+
+# --- Observer + diagnoser tuning ---------------------------------------------
+
+# Maximum spans pulled per cycle.
+# span_limit = 200
+
+# Minimum spans needed before a cluster gets named.
+# min_cluster_size = 3
+
+# Pass rate the verifier needs across regression cases before a fix
+# is recommended for approval.
+# regression_pass_threshold = 0.90
+
+# Cap on the share of golden-dataset cases a fix is allowed to break.
+# golden_regression_limit = 0.02
+
+# Dry-run sample count used to sanity-check a candidate prompt before
+# the full experiment.
+# dry_run_samples = 3
+
+# Per-span character budget when assembling the clusterer prompt.
+# Lower this if Gemini complains about prompt size.
+# cluster_trace_char_budget = 2000
+
+# --- Storage paths ------------------------------------------------------------
+
+# Where the verifier writes RCA bundles.
+# artifacts_dir = "artifacts"
+
+# SQLite database that tracks cluster lifecycle and approvals.
+# state_db_path = "~/.nengok/state.db"
+
+# --- Dashboard ----------------------------------------------------------------
+
+# Bind host for `nengok dashboard`. 127.0.0.1 keeps the dashboard
+# loopback-only.
+# dashboard_host = "127.0.0.1"
+
+# Dashboard port.
+# dashboard_port = 8765
+
+# --- MCP preflight ------------------------------------------------------------
+
+# Whether `nengok run` checks the configured Phoenix project via MCP
+# before the Observer fires.
+# mcp_enabled = true
+
+# Command used to spawn the MCP server.
+# mcp_npx_command = "npx"
+
+# MCP package pinned by Nengok.
+# mcp_package = "@arizeai/phoenix-mcp@4.0.13"
+
+# MCP startup and per-request timeouts, in seconds. Bump these for
+# remote Phoenix Cloud tenants that respond slowly during cold start.
+# mcp_startup_timeout = 30.0
+# mcp_request_timeout = 30.0
+
+# --- Resilience knobs ---------------------------------------------------------
+
+# Per-call Gemini timeout in seconds.
+# gemini_timeout_seconds = 45.0
+
+# Maximum retries for 429s and 5xx errors per Gemini call.
+# gemini_max_retries = 3
+
+# Minimum back-off between Gemini retries, in seconds.
+# gemini_min_retry_backoff_seconds = 1.0
+
+# Phoenix HTTP timeouts, in seconds. Cloud round-trips are slower than
+# loopback, so consider raising read and experiment timeouts if you
+# see frequent timeouts in `nengok watch` logs.
+# phoenix_read_timeout_seconds = 15.0
+# phoenix_write_timeout_seconds = 60.0
+# phoenix_experiment_timeout_seconds = 300.0
+
+# Cap on Gemini tokens spent per cycle. The orchestrator stops issuing
+# new Gemini calls once the budget is exhausted and resumes next cycle.
+# gemini_cycle_token_budget = 200000
+
+# Pricing used to translate cycle token counts into a dollar estimate.
+# gemini_input_dollars_per_million = 6.0
+# gemini_output_dollars_per_million = 24.0
+
+# Circuit breaker that pauses `nengok watch` after a stage fails
+# repeatedly. The breaker writes an incident report under
+# `artifacts/incidents/<iso>/` when it trips.
+# circuit_breaker_backoff_seconds = 900
+# circuit_breaker_consecutive_failures = 3
+
+# Whether the dashboard exposes Prometheus metrics at /metrics.
+# metrics_enabled = false
