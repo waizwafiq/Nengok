@@ -26,7 +26,12 @@ from nengok.core.evaluators.aggregate import summarize_experiment
 from nengok.core.evaluators.code_evals import CodeEvaluator
 from nengok.core.evaluators.llm_judges import JudgeSpec, _ensure_phoenix_judge
 from nengok.core.types import RegressionTestCase, TraceSpan
-from nengok.errors import PhoenixTimeoutError
+from nengok.errors import (
+    AgentRunnerLoadError,
+    GoldenDatasetError,
+    OptionalDependencyError,
+    PhoenixTimeoutError,
+)
 from nengok.phoenix.spans import normalize_span
 from nengok.runners.agent_runner import AgentRunner, get_runner
 from nengok.utils.logging import get_logger
@@ -87,9 +92,9 @@ class PhoenixWrapper:
         try:
             from phoenix.client import Client
         except ImportError as exc:  # pragma: no cover - import guard
-            raise RuntimeError(
-                "arize-phoenix-client is not installed. "
-                "Install it via `pip install nengok[phoenix]` or `pip install arize-phoenix-client`."
+            raise OptionalDependencyError(
+                "arize-phoenix-client is not installed but is required to talk to Phoenix.",
+                install_hint="pip install nengok[phoenix]",
             ) from exc
 
         kwargs: dict[str, Any] = {"base_url": self._config.phoenix_base_url}
@@ -226,10 +231,13 @@ class PhoenixWrapper:
         """
         runner = get_runner(self._config.project_identifier)
         if runner is None:
-            raise RuntimeError(
-                f"No agent runner registered for project "
+            raise AgentRunnerLoadError(
+                f"No agent runner registered for Phoenix project "
                 f"'{self._config.project_identifier}'. Call "
-                "`nengok.runners.register_runner` before running an experiment."
+                "`nengok.runners.register_runner(<project>, <callable>)` "
+                "from your bootstrap module before invoking `nengok run`, "
+                "or set `--project travel-planner-agent` to use the bundled demo.",
+                project_identifier=self._config.project_identifier,
             )
 
         client = self._get_client()
@@ -299,10 +307,12 @@ class PhoenixWrapper:
         if self._golden_cache is not None:
             return self._golden_cache
         if not SAMPLE_GOLDEN_PATH.exists():
-            raise RuntimeError(
+            raise GoldenDatasetError(
                 f"Golden dataset not found at {SAMPLE_GOLDEN_PATH}. "
-                "Bundle a golden_dataset/ directory with the SDK or override "
-                "the path before calling run_golden_comparison."
+                "Reinstall the SDK so the bundled `golden_dataset/` directory ships "
+                "alongside `nengok/`, or point a fork at a custom dataset path before "
+                "calling `run_golden_comparison`.",
+                path=str(SAMPLE_GOLDEN_PATH),
             )
         parsed: dict[str, Any] = json.loads(SAMPLE_GOLDEN_PATH.read_text(encoding="utf-8"))
         self._golden_cache = parsed
