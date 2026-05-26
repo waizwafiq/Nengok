@@ -50,6 +50,10 @@ DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS = 15.0
 DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS = 60.0
 DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS = 300.0
 
+DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET = 200_000
+DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION = 6.0
+DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION = 24.0
+
 
 @dataclass(frozen=True)
 class NengokConfig:
@@ -91,6 +95,10 @@ class NengokConfig:
     phoenix_read_timeout_seconds: float = DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS
     phoenix_write_timeout_seconds: float = DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS
     phoenix_experiment_timeout_seconds: float = DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS
+
+    gemini_cycle_token_budget: int = DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET
+    gemini_input_dollars_per_million: float = DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION
+    gemini_output_dollars_per_million: float = DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION
 
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
