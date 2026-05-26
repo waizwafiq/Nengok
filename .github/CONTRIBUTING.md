@@ -227,6 +227,8 @@ The dashboard binds to `127.0.0.1` by default and runs without auth. Pass `--lis
 
 The dashboard server also rate-limits every `/api/v1/*` route at 60 requests per minute per source IP. Loopback addresses (`127.0.0.1`, `::1`) are exempt so calls from the dashboard owner's own machine run unconstrained. When a remote client exceeds the limit, the response is `429` with a JSON body (`{"error": "rate_limit_exceeded", ...}`) and a `Retry-After: 60` header, so curl, browsers, and Cloud Run back off for a minute before retrying.
 
+For infrastructure probes the dashboard exposes `GET /health` outside the `/api/v1` prefix. The endpoint takes no auth, sits outside the rate limiter, and returns JSON of the form `{"status": "ok", "version": "0.1.0", "phoenix_reachable": bool, "gemini_reachable": bool, "db_writable": bool}`. Phoenix reachability is a short HTTP GET against `/v1/projects`, Gemini reachability is a 1-token ping against `gemini-2.5-flash`, and `db_writable` writes a sentinel file next to `state_db_path` and opens a SQLite connection. Both upstream checks are cached for 30 seconds so a Cloud Run or Kubernetes liveness probe firing every few seconds hits the cache instead of the upstream API.
+
 #### Frontend development with HMR (recommended)
 
 Use this loop when you're editing anything under `frontend/`: run the Vite dev server in one terminal and the FastAPI server in another. Vite hot-reloads on save, proxies `/api` calls to the FastAPI side, and leaves the pre-built bundle in `nengok/server/static/` untouched.
