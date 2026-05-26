@@ -32,6 +32,7 @@ from nengok.utils.logging import get_logger
 
 if TYPE_CHECKING:
     from nengok.config import NengokConfig
+    from nengok.core.cost import CostTracker
 
 logger = get_logger(__name__)
 
@@ -111,6 +112,7 @@ def call_gemini(
     env_var_hint: str | None = None,
     role_hint: str | None = None,
     retry_policy: RetryPolicy | None = None,
+    cost_tracker: CostTracker | None = None,
 ) -> str:
     """
     Invoke `client.models.generate_content` and translate API errors.
@@ -128,6 +130,10 @@ def call_gemini(
     retrying. When `retry_policy` is None, the call runs once with no
     timeout for backwards compatibility with callers that manage
     retries themselves.
+
+    When `cost_tracker` is provided, the per-call `usage_metadata`
+    counts feed the per-cycle budget. Stages share one tracker per
+    cycle through the orchestrator.
     """
     try:
         from google.genai import errors as genai_errors
@@ -144,6 +150,7 @@ def call_gemini(
             env_var_hint=env_var_hint,
             role_hint=role_hint,
             timeout_seconds=retry_policy.timeout_seconds if retry_policy else None,
+            cost_tracker=cost_tracker,
         )
 
     if retry_policy is None or retry_policy.max_attempts <= 1:
@@ -173,6 +180,7 @@ def _invoke_once(
     env_var_hint: str | None,
     role_hint: str | None,
     timeout_seconds: float | None,
+    cost_tracker: CostTracker | None,
 ) -> str:
     kwargs: dict[str, Any] = {"model": model, "contents": contents}
     if config is not None:
@@ -188,7 +196,22 @@ def _invoke_once(
     except genai_errors.APIError as exc:
         _translate_and_raise(exc, model=model, env_var_hint=env_var_hint, role_hint=role_hint)
 
+    if cost_tracker is not None:
+        _record_usage(cost_tracker, response)
+
     return response.text or ""
+
+
+def _record_usage(cost_tracker: CostTracker, response: Any) -> None:
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return
+    prompt_tokens = getattr(usage, "prompt_token_count", None) or 0
+    completion_tokens = getattr(usage, "candidates_token_count", None) or 0
+    cost_tracker.record(
+        prompt_tokens=int(prompt_tokens),
+        completion_tokens=int(completion_tokens),
+    )
 
 
 def _run_with_timeout(

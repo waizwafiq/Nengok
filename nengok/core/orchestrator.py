@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 from nengok.config import NengokConfig
+from nengok.core.cost import CostTracker
 from nengok.core.diagnoser.clusterer import Clusterer
 from nengok.core.diagnoser.hypothesizer import Hypothesizer
 from nengok.core.fixer.experiment_runner import ExperimentRunner
@@ -76,6 +77,9 @@ class Orchestrator:
         started_at = datetime.now(UTC)
         logger.info("Cycle start (project=%s, dry_run=%s)", self.config.project_identifier, dry_run)
 
+        cost_tracker = self._fresh_cost_tracker()
+        self._attach_cost_tracker(cost_tracker)
+
         with tracer.start_as_current_span("nengok.cycle") as cycle_span:
             set_attributes(
                 cycle_span,
@@ -128,9 +132,19 @@ class Orchestrator:
 
             artifacts: list[FixArtifact] = []
             escalations = 0
+            over_budget = False
 
-            for cluster in clusters:
+            for index, cluster in enumerate(clusters):
                 assert cluster.hypothesis is not None
+
+                if self._is_over_budget(cost_tracker):
+                    over_budget = True
+                    skipped = [c.cluster_id for c in clusters[index:]]
+                    self._record_over_budget(
+                        cost_tracker=cost_tracker,
+                        skipped_cluster_ids=skipped,
+                    )
+                    break
 
                 cluster_attrs = _cluster_span_attrs(cluster, signal_counts)
 
@@ -192,9 +206,18 @@ class Orchestrator:
                     "nengok.cycle.fixes_proposed": len(artifacts),
                     "nengok.cycle.escalations": escalations,
                     "nengok.cycle.duration_s": (finished_at - started_at).total_seconds(),
+                    "nengok.cycle.gemini_tokens": cost_tracker.tokens_used,
+                    "nengok.cycle.gemini_dollars": cost_tracker.dollars_used,
+                    "nengok.cycle.over_budget": over_budget,
                 },
             )
-            logger.info("Cycle complete in %.1fs", (finished_at - started_at).total_seconds())
+            logger.info(
+                "Cycle complete in %.1fs (tokens=%d, $=%.4f, over_budget=%s)",
+                (finished_at - started_at).total_seconds(),
+                cost_tracker.tokens_used,
+                cost_tracker.dollars_used,
+                over_budget,
+            )
 
             return CycleResult(
                 clusters_detected=len(clusters),
@@ -209,6 +232,58 @@ class Orchestrator:
             return
         register_meta_tracer()
         Orchestrator._traced = True
+
+    def _fresh_cost_tracker(self) -> CostTracker:
+        return CostTracker(
+            input_dollars_per_million=self.config.gemini_input_dollars_per_million,
+            output_dollars_per_million=self.config.gemini_output_dollars_per_million,
+        )
+
+    def _attach_cost_tracker(self, cost_tracker: CostTracker) -> None:
+        self._clusterer.cost_tracker = cost_tracker
+        self._hypothesizer.cost_tracker = cost_tracker
+        self._test_generator.cost_tracker = cost_tracker
+        self._prompt_proposer.cost_tracker = cost_tracker
+
+    def _is_over_budget(self, cost_tracker: CostTracker) -> bool:
+        return cost_tracker.is_over_budget(self.config.gemini_cycle_token_budget)
+
+    def _record_over_budget(
+        self,
+        *,
+        cost_tracker: CostTracker,
+        skipped_cluster_ids: list[str],
+    ) -> None:
+        body_lines = [
+            f"- tokens_used: {cost_tracker.tokens_used}",
+            f"- token_budget: {self.config.gemini_cycle_token_budget}",
+            f"- dollars_used: {cost_tracker.dollars_used:.4f}",
+            f"- skipped_cluster_count: {len(skipped_cluster_ids)}",
+            "",
+            "Skipped clusters:",
+        ]
+        for cluster_id in skipped_cluster_ids:
+            body_lines.append(f"  - `{cluster_id}`")
+        body_lines.append("")
+        body_lines.append(
+            "The cycle aborted before processing the remaining clusters because "
+            "the configured `gemini_cycle_token_budget` was exceeded. Raise the "
+            "budget in `~/.nengok/config.toml` to let more clusters through per "
+            "cycle, or investigate why a single cluster spent this many tokens."
+        )
+        write_incident(
+            artifacts_dir=self.config.artifacts_dir,
+            filename="over-budget.md",
+            title="Cycle aborted: Gemini cost budget exceeded",
+            body="\n".join(body_lines),
+        )
+        logger.warning(
+            "Cycle aborted: %d tokens used (budget=%d, $=%.4f); %d cluster(s) skipped",
+            cost_tracker.tokens_used,
+            self.config.gemini_cycle_token_budget,
+            cost_tracker.dollars_used,
+            len(skipped_cluster_ids),
+        )
 
     def _record_phoenix_timeout(self, *, cluster: Cluster, exc: PhoenixTimeoutError) -> None:
         body_lines = [

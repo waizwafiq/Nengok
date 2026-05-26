@@ -249,6 +249,8 @@ class StateStore:
             "close_rate": close_rate,
             "regression_test_count": int(regression_row["total"] or 0),
             "fix_pass_rate_30d": pass_row["pass_rate"],
+            "gemini_tokens_used_30d": 0,
+            "gemini_dollars_used_30d": 0.0,
         }
 
     def latest_experiment(self, cluster_id: str) -> dict | None:

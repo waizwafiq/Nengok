@@ -125,6 +125,11 @@ export function OverviewPage() {
           value={formatPercent(data.fix_pass_rate_30d)}
           hint="Average across recent experiments"
         />
+        <MetricCard
+          label="Gemini spend (30d)"
+          value={formatDollars(data.gemini_dollars_used_30d)}
+          hint={`${formatTokenCount(data.gemini_tokens_used_30d)} tokens`}
+        />
       </section>
     </div>
   );
@@ -210,4 +215,18 @@ function formatPercent(value: number | null): string {
     return "—";
   }
   return `${(value * 100).toFixed(0)}%`;
+}
+
+function formatDollars(value: number): string {
+  return `$${value.toFixed(2)}`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}k`;
+  }
+  return value.toString();
 }

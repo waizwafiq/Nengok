@@ -69,6 +69,8 @@ def test_overview_returns_zeroed_metrics_on_empty_store(tmp_path: Path) -> None:
     assert overview["mttd_seconds"] is None
     assert overview["mttr_seconds"] is None
     assert overview["fix_pass_rate_30d"] is None
+    assert overview["gemini_tokens_used_30d"] == 0
+    assert overview["gemini_dollars_used_30d"] == 0.0
 
 
 def test_overview_aggregates_status_counts_and_close_rate(tmp_path: Path) -> None:

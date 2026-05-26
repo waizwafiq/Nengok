@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
+from nengok.core.cost import CostTracker
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
 from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
@@ -72,6 +73,7 @@ class _RawGroup:
 class Clusterer:
     config: NengokConfig
     gemini_call: GeminiTextCall | None = None
+    cost_tracker: CostTracker | None = None
 
     def cluster(self, anomalies: list[AnomalousSpan]) -> list[Cluster]:
         """Return one Cluster per detected failure mode."""
@@ -145,6 +147,7 @@ class Clusterer:
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Clusterer",
             retry_policy=RetryPolicy.from_config(self.config),
+            cost_tracker=self.cost_tracker,
         )
 
 

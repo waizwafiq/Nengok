@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
+from nengok.core.cost import CostTracker
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.utils.gemini import RetryPolicy, call_gemini
@@ -50,6 +51,7 @@ class PromptProposer:
     config: NengokConfig
     phoenix: PhoenixWrapper | None = None
     gemini_call: GeminiTextCall | None = None
+    cost_tracker: CostTracker | None = None
 
     def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
         """
@@ -154,6 +156,7 @@ class PromptProposer:
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Prompt Proposer",
             retry_policy=RetryPolicy.from_config(self.config),
+            cost_tracker=self.cost_tracker,
         )
 
 
