@@ -72,6 +72,7 @@ class NengokConfig:
     google_api_key: str | None = None
 
     project_identifier: str = "default"
+    agent_runner: str | None = None
 
     diagnoser_model: str = DIAGNOSER_MODEL
     judge_model: str = JUDGE_MODEL
