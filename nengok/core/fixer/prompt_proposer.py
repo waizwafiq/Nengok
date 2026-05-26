@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
+from nengok.errors import BaselinePromptError, MissingApiKeyError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
@@ -90,10 +91,14 @@ class PromptProposer:
         if self.config.baseline_prompt_path is not None:
             return self.config.baseline_prompt_path.read_text(encoding="utf-8")
 
-        raise RuntimeError(
-            f"No baseline prompt for project '{self.config.project_identifier}'. "
-            "Register one in Phoenix prompt management or set "
-            "config.baseline_prompt_path."
+        raise BaselinePromptError(
+            f"No baseline prompt resolved for project "
+            f"'{self.config.project_identifier}'. Either register a prompt in "
+            "Phoenix Prompt Management under that name, or set "
+            '`baseline_prompt_path = "/path/to/prompt.md"` in '
+            "`~/.nengok/config.toml`. The sample agent at "
+            "`travel-planner-agent` ships with a bundled prompt and needs no setup.",
+            project_identifier=self.config.project_identifier,
         )
 
     def _load_exemplars(self, cluster: Cluster) -> list[TraceSpan]:
@@ -140,9 +145,11 @@ class PromptProposer:
 
         api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
         if not api_key:
-            raise RuntimeError(
-                "Gemini proposer needs GOOGLE_API_KEY in the environment "
-                "or google_api_key in the Nengok config."
+            raise MissingApiKeyError(
+                "Prompt Proposer needs a Gemini API key. Set `GOOGLE_API_KEY` in your "
+                'environment (or `.env`), or write `google_api_key = "..."` into '
+                "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
+                role="Prompt Proposer",
             )
         client = genai.Client(api_key=api_key)
         return call_gemini(
