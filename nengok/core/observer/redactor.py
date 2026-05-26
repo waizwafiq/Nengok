@@ -14,7 +14,7 @@ import importlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pydantic import BaseModel
 
@@ -154,4 +154,4 @@ def _load_callable_redactor(dotted_path: str) -> RedactFn:
             f"redactor_callable '{dotted_path}' did not resolve to a callable. "
             f"Confirm `{attr_part}` exists in `{module_part}` and accepts a single `str`."
         )
-    return attr
+    return cast(RedactFn, attr)
