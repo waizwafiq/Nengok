@@ -16,6 +16,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from nengok.utils.gemini import call_gemini
+
 PROMPT_PATH = Path(__file__).parent / "prompts" / "qa.md"
 DEFAULT_MODEL = "gemini-2.5-flash"
 PHOENIX_PROJECT_NAME = "qa-agent"
@@ -98,15 +100,18 @@ def answer_question(question: str, *, prompt: str | None = None, drop_context: b
     user_prompt = f"Question: {question}\n\n" f"--- SNIPPETS ---\n{rendered_snippets}\n--- END SNIPPETS ---"
 
     client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-    response = client.models.generate_content(
+    answer = call_gemini(
+        client,
         model=os.environ.get("QA_AGENT_MODEL", DEFAULT_MODEL),
         contents=[{"role": "user", "parts": [{"text": system_prompt + "\n\n" + user_prompt}]}],
+        env_var_hint="QA_AGENT_MODEL",
+        role_hint="QA Agent",
     )
 
     return {
         "question": question,
         "snippets": snippets,
-        "answer": response.text,
+        "answer": answer,
         "prompt_source": "injected" if prompt is not None else PROMPT_PATH.name,
     }
 
