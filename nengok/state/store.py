@@ -156,6 +156,35 @@ class StateStore:
             )
         return approval_id
 
+    def record_cycle_usage(
+        self,
+        *,
+        cycle_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+        gemini_tokens: int,
+        gemini_dollars: float,
+    ) -> None:
+        """Persist a cycle's Gemini spend for the overview dashboard."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO cycles (cycle_id, started_at, ended_at, gemini_tokens, gemini_dollars)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(cycle_id) DO UPDATE SET
+                    ended_at = excluded.ended_at,
+                    gemini_tokens = excluded.gemini_tokens,
+                    gemini_dollars = excluded.gemini_dollars
+                """,
+                (
+                    cycle_id,
+                    started_at.isoformat(),
+                    ended_at.isoformat(),
+                    gemini_tokens,
+                    gemini_dollars,
+                ),
+            )
+
     def record_experiment(self, *, cluster_id: str, result: ExperimentResult) -> None:
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
@@ -234,6 +263,29 @@ class StateStore:
                 """
             ).fetchone()
 
+            spend_row = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(gemini_tokens), 0) AS tokens,
+                    COALESCE(SUM(gemini_dollars), 0.0) AS dollars
+                FROM cycles
+                WHERE started_at >= datetime('now', '-30 days')
+                """
+            ).fetchone()
+
+            sparkline_rows = conn.execute(
+                """
+                SELECT
+                    DATE(started_at) AS day,
+                    COALESCE(SUM(gemini_tokens), 0) AS tokens,
+                    COALESCE(SUM(gemini_dollars), 0.0) AS dollars
+                FROM cycles
+                WHERE started_at >= datetime('now', '-30 days')
+                GROUP BY DATE(started_at)
+                ORDER BY day ASC
+                """
+            ).fetchall()
+
         return {
             "cluster_counts": {
                 "open": open_count,
@@ -249,8 +301,16 @@ class StateStore:
             "close_rate": close_rate,
             "regression_test_count": int(regression_row["total"] or 0),
             "fix_pass_rate_30d": pass_row["pass_rate"],
-            "gemini_tokens_used_30d": 0,
-            "gemini_dollars_used_30d": 0.0,
+            "gemini_tokens_used_30d": int(spend_row["tokens"] or 0),
+            "gemini_dollars_used_30d": float(spend_row["dollars"] or 0.0),
+            "gemini_spend_sparkline_30d": [
+                {
+                    "day": row["day"],
+                    "tokens": int(row["tokens"] or 0),
+                    "dollars": float(row["dollars"] or 0.0),
+                }
+                for row in sparkline_rows
+            ],
         }
 
     def latest_experiment(self, cluster_id: str) -> dict | None:

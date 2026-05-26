@@ -123,6 +123,9 @@ class _State:
     def record_experiment(self, *, cluster_id: str, result: ExperimentResult) -> None:
         self.experiments.append((cluster_id, result))
 
+    def record_cycle_usage(self, **_: object) -> None:
+        return
+
 
 class _Clusterer:
     def __init__(self, clusters: list[Cluster]) -> None:

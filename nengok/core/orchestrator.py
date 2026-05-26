@@ -123,6 +123,13 @@ class Orchestrator:
                 )
 
             if not new_anomalies:
+                self._state.record_cycle_usage(
+                    cycle_id=run_id,
+                    started_at=started_at,
+                    ended_at=datetime.now(UTC),
+                    gemini_tokens=cost_tracker.tokens_used,
+                    gemini_dollars=cost_tracker.dollars_used,
+                )
                 return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
 
             baseline_prompt = self._prompt_proposer.load_baseline_prompt()
@@ -243,6 +250,14 @@ class Orchestrator:
                 cost_tracker.tokens_used,
                 cost_tracker.dollars_used,
                 over_budget,
+            )
+
+            self._state.record_cycle_usage(
+                cycle_id=run_id,
+                started_at=started_at,
+                ended_at=finished_at,
+                gemini_tokens=cost_tracker.tokens_used,
+                gemini_dollars=cost_tracker.dollars_used,
             )
 
             return CycleResult(

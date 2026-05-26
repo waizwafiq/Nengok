@@ -7,6 +7,8 @@ import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
+import { Sparkline } from "../components/ui/Sparkline";
+import type { GeminiSpendPoint } from "../types/dashboard";
 
 export function OverviewPage() {
   useLayoutBreadcrumb([{ label: "Workspace" }, { label: "Overview" }]);
@@ -125,10 +127,10 @@ export function OverviewPage() {
           value={formatPercent(data.fix_pass_rate_30d)}
           hint="Average across recent experiments"
         />
-        <MetricCard
-          label="Gemini spend (30d)"
-          value={formatDollars(data.gemini_dollars_used_30d)}
-          hint={`${formatTokenCount(data.gemini_tokens_used_30d)} tokens`}
+        <CostCard
+          dollars={data.gemini_dollars_used_30d}
+          tokens={data.gemini_tokens_used_30d}
+          sparkline={data.gemini_spend_sparkline_30d}
         />
       </section>
     </div>
@@ -155,6 +157,30 @@ function StatTile({
     <Card>
       <div className="section-label">{label}</div>
       <div className={`mt-2 text-3xl font-semibold tabular-nums ${accentClass}`}>{value}</div>
+    </Card>
+  );
+}
+
+function CostCard({
+  dollars,
+  tokens,
+  sparkline,
+}: {
+  dollars: number;
+  tokens: number;
+  sparkline: GeminiSpendPoint[];
+}) {
+  const values = sparkline.map((point) => point.dollars);
+  return (
+    <Card>
+      <div className="section-label">Gemini spend (30d)</div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="text-2xl font-semibold tabular-nums text-foreground">
+          {formatDollars(dollars)}
+        </div>
+        <Sparkline values={values} />
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{formatTokenCount(tokens)} tokens</div>
     </Card>
   );
 }

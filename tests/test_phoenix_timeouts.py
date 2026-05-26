@@ -133,6 +133,9 @@ class _State:
     def record_experiment(self, **_: Any) -> None:
         return
 
+    def record_cycle_usage(self, **_: Any) -> None:
+        return
+
 
 class _Clusterer:
     def __init__(self, clusters: list[Cluster]) -> None:
