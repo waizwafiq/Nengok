@@ -104,8 +104,69 @@ def test_429_translates_to_quota_error() -> None:
         {"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}},
     )
     client = _StubClient(exc=exc)
-    with pytest.raises(GeminiQuotaError):
+    with pytest.raises(GeminiQuotaError) as excinfo:
         call_gemini(client, model="m", contents=[])
+    assert excinfo.value.retry_after_seconds is None
+    assert excinfo.value.quota_id is None
+
+
+def test_429_parses_retry_delay_and_quota_id_from_details() -> None:
+    exc = genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "Quota exceeded. Please retry in 44.9s.",
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                        "retryDelay": "45s",
+                    },
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}],
+                    },
+                ],
+            }
+        },
+    )
+    client = _StubClient(exc=exc)
+    with pytest.raises(GeminiQuotaError) as excinfo:
+        call_gemini(
+            client,
+            model="gemini-2.5-flash",
+            contents=[],
+            env_var_hint="SAMPLE_AGENT_MODEL",
+            role_hint="Travel Planner",
+        )
+
+    err = excinfo.value
+    assert err.retry_after_seconds == 45.0
+    assert err.quota_id == "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+    message = str(err)
+    assert "Retry in 45s" in message
+    assert "GenerateRequestsPerDayPerProjectPerModel-FreeTier" in message
+    assert "SAMPLE_AGENT_MODEL" in message
+    assert "gemini-2.5-flash" in message
+
+
+def test_429_falls_back_to_message_when_details_missing() -> None:
+    exc = genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "message": "Quota exceeded. Please retry in 12s.",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        },
+    )
+    client = _StubClient(exc=exc)
+    with pytest.raises(GeminiQuotaError) as excinfo:
+        call_gemini(client, model="m", contents=[])
+    assert excinfo.value.retry_after_seconds == 12.0
+    assert excinfo.value.quota_id is None
 
 
 def test_unhandled_apierror_reraises() -> None:

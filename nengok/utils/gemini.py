@@ -10,6 +10,7 @@ unwinding a stack trace from inside the SDK.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -26,7 +27,30 @@ class GeminiAuthError(GeminiCallError):
 
 
 class GeminiQuotaError(GeminiCallError):
-    """Raised when the call hit a 429 rate-limit or quota cap."""
+    """
+    Raised when the call hit a 429 rate-limit or quota cap.
+
+    `retry_after_seconds` is parsed from the `RetryInfo` block Google
+    attaches to the error and is None when the API does not include
+    one. `quota_id` is the Google quota identifier
+    (e.g. `GenerateRequestsPerDayPerProjectPerModel-FreeTier`) so the
+    caller can tell a daily-cap from a per-minute throttle.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after_seconds: float | None = None,
+        quota_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+        self.quota_id = quota_id
+
+
+_RETRY_DELAY_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)s$")
+_RETRY_IN_MESSAGE_PATTERN = re.compile(r"retry in (\d+(?:\.\d+)?)\s*s", re.IGNORECASE)
 
 
 def call_gemini(
@@ -92,12 +116,62 @@ def _translate_and_raise(
         ) from exc
 
     if code == 429 or status in {"RESOURCE_EXHAUSTED", "TOO_MANY_REQUESTS"}:
+        retry_after = _parse_retry_after(exc, message)
+        quota_id = _parse_quota_id(exc)
+        retry_hint = f" Retry in {retry_after:.0f}s." if retry_after is not None else ""
+        quota_hint = f" Quota hit: {quota_id}." if quota_id else ""
+        guidance = (
+            " Free-tier daily caps reset at midnight Pacific; raise the cap at "
+            "https://ai.dev/rate-limit or switch model via "
+            f"{env_var_hint}."
+            if env_var_hint
+            else " Raise the cap at https://ai.dev/rate-limit."
+        )
         raise GeminiQuotaError(
-            f"{role}: Gemini quota or rate limit exhausted ({code} {status}). "
-            "Wait and retry, or switch to a different key or model tier."
+            f"{role}: Gemini quota or rate limit exhausted ({code} {status}) for model {model!r}."
+            f"{retry_hint}{quota_hint}{guidance}",
+            retry_after_seconds=retry_after,
+            quota_id=quota_id,
         ) from exc
 
     raise
+
+
+def _parse_retry_after(exc: Exception, message: str) -> float | None:
+    """Extract the API-suggested retry delay in seconds, if present."""
+    details: list[Any] = getattr(exc, "details", None) or []
+    if isinstance(details, dict):
+        details = details.get("error", {}).get("details") or []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        if detail.get("@type", "").endswith("google.rpc.RetryInfo"):
+            raw = detail.get("retryDelay")
+            if isinstance(raw, str):
+                match = _RETRY_DELAY_PATTERN.match(raw.strip())
+                if match:
+                    return float(match.group(1))
+    match = _RETRY_IN_MESSAGE_PATTERN.search(message)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _parse_quota_id(exc: Exception) -> str | None:
+    """Extract the `quotaId` from the first QuotaFailure violation, if present."""
+    details: list[Any] = getattr(exc, "details", None) or []
+    if isinstance(details, dict):
+        details = details.get("error", {}).get("details") or []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        if detail.get("@type", "").endswith("google.rpc.QuotaFailure"):
+            violations = detail.get("violations") or []
+            if violations and isinstance(violations[0], dict):
+                quota_id = violations[0].get("quotaId")
+                if isinstance(quota_id, str):
+                    return quota_id
+    return None
 
 
 def _looks_like_invalid_model(code: int | None, status: str, message: str) -> bool:
