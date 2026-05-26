@@ -122,6 +122,16 @@ The two `NENGOK_*` vars feed `NengokConfig.diagnoser_model` and `NengokConfig.ju
 
 If you set one of these to a string Google does not recognise, every Gemini call routes through `nengok/utils/gemini.py::call_gemini` and the SDK raises `InvalidGeminiModelError` (or `GeminiAuthError` / `GeminiQuotaError` for 401/403/429) with a message that names the env var you configured. The error replaces the raw `google.genai.errors.ClientError` stack trace, so a typo surfaces as `Clusterer: model 'gemini-1.5-pro' is not a valid Gemini model. Override via the NENGOK_DIAGNOSER_MODEL env var.` instead of a 404 deep inside the call site.
 
+#### When Gemini says 429
+
+The free tier of `gemini-2.5-flash` is capped at 20 requests per day per project, which a few back-to-back `python -m sample_agent.seed --count 15` invocations will burn through. When the API answers 429, Nengok behaves differently depending on the entry point:
+
+- **`python -m sample_agent.seed`** parses the API-suggested retry delay out of the `RetryInfo` block, sleeps that long plus one second of buffer, and retries the same query once. If the retry also 429s, the run is marked failed and the loop continues to the next query. The summary line at the end reports the surviving count.
+- **`nengok run`** prints a one-line `Error: ...` with the retry delay and quota id, then exits 1. The cluster pipeline can't usefully resume mid-cycle, so the cleanest path is to wait and re-run.
+- **`nengok watch`** prints a one-line `Cycle skipped: ...` and waits for the next interval. The heartbeat stays alive.
+
+To raise the cap, enable billing at <https://ai.dev/rate-limit> and the free-tier quotaId (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) stops applying. To keep using free tier but make Nengok behave, point `NENGOK_DIAGNOSER_MODEL` and `SAMPLE_AGENT_MODEL` at different models so the daily caps don't share a bucket.
+
 ### 4. Start a local Phoenix (optional, for end-to-end work)
 
 If you already have Phoenix Cloud or a remote Phoenix, point `PHOENIX_BASE_URL` and `PHOENIX_API_KEY` at it in `.env` and skip this step.
