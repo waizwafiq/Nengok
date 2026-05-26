@@ -275,6 +275,27 @@ The architectural rules — code-first evaluators, no data egress, human-in-the-
 
 CI rejects suppressions (`# noqa`, `# type: ignore`, `// eslint-disable`, `as any`). If a rule fires, fix the root cause.
 
+### Tests that need an optional extra
+
+SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12, so we catch the case where core SDK code accidentally requires an optional dependency. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
+
+A test file that imports `google.genai`, `phoenix.client.*`, or any other module from an optional extra at module top breaks collection in the minimal-deps job. Guard the import with `pytest.importorskip` so the test skips cleanly there and runs for real in the full-extras job:
+
+```python
+import pytest
+
+genai_errors = pytest.importorskip(
+    "google.genai.errors",
+    reason="google-genai not installed; this test needs the gemini extra.",
+)
+
+from nengok.utils.gemini import call_gemini
+```
+
+The `tests/**` per-file ignore in `pyproject.toml` allows imports below an `importorskip` call (otherwise ruff E402 would fire). Outside `tests/`, imports stay at the top. The relaxation is test-only and is the project's one structural exception to the no-suppressions rule above.
+
+The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments"` before pytest, so if either extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
+
 ## Phoenix API Cheatsheet
 
 The Phoenix surface Nengok actually calls. Use this as the canonical reference when writing or reviewing code that touches `nengok/phoenix/`. MCP tools are reliable for reading traces, spans, and sessions; dataset creation and experiment execution go through the Python SDK because it has been more stable for programmatic workflows.
