@@ -29,6 +29,7 @@ from starlette.types import Scope
 from nengok import __version__
 from nengok.config import NengokConfig
 from nengok.server.auth import require_dashboard_token
+from nengok.server.rate_limit import DashboardRateLimitMiddleware, build_limiter
 from nengok.server.routes import approvals, artifacts, clusters, dashboard, experiments
 from nengok.utils.logging import get_logger
 
@@ -79,6 +80,10 @@ def create_app(*, config: NengokConfig) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    limiter = build_limiter()
+    app.state.limiter = limiter
+    app.add_middleware(DashboardRateLimitMiddleware, limiter=limiter)
 
     app.state.config = config
 
