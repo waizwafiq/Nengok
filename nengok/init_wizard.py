@@ -21,6 +21,8 @@ from urllib.parse import urljoin
 
 import click
 
+from nengok.errors import OptionalDependencyError
+
 DEFAULT_LOCAL_PHOENIX_URL = "http://localhost:6006"
 PHOENIX_CLOUD_BASE_URL = "https://app.phoenix.arize.com"
 DEFAULT_PROJECT_NAME = "travel-planner-agent"
@@ -242,7 +244,10 @@ def _default_gemini_ping(api_key: str) -> None:
     try:
         from google import genai
     except ImportError as exc:
-        raise RuntimeError("google-genai is not installed; install with the `gemini` extra.") from exc
+        raise OptionalDependencyError(
+            "google-genai is not installed but is required to validate the API key.",
+            install_hint="pip install nengok[gemini]",
+        ) from exc
 
     client = genai.Client(api_key=api_key)
     client.models.generate_content(
