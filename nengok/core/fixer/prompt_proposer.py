@@ -140,9 +140,6 @@ class PromptProposer:
             return _GeminiProposal.model_validate_json(_strip_code_fence(retry))
 
     def _default_gemini_call(self, prompt: str) -> str:
-        from google import genai
-        from google.genai import types
-
         api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise MissingApiKeyError(
@@ -151,6 +148,9 @@ class PromptProposer:
                 "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
                 role="Prompt Proposer",
             )
+        from google import genai
+        from google.genai import types
+
         client = genai.Client(api_key=api_key)
         return call_gemini(
             client,

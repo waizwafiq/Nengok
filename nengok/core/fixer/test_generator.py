@@ -125,9 +125,6 @@ class TestGenerator:
             return _GeminiCaseList.model_validate_json(_strip_code_fence(retry)).cases
 
     def _default_gemini_call(self, prompt: str) -> str:
-        from google import genai
-        from google.genai import types
-
         api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
         if not api_key:
             raise MissingApiKeyError(
@@ -136,6 +133,9 @@ class TestGenerator:
                 "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
                 role="Test Generator",
             )
+        from google import genai
+        from google.genai import types
+
         client = genai.Client(api_key=api_key)
         # response_schema is omitted on purpose: _GeminiCase has dict[str, Any]
         # fields, and Pydantic v2 emits `additionalProperties` for those, which
