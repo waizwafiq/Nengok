@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from nengok.config import NengokConfig
 from nengok.core.types import Cluster, RegressionTestCase
+from nengok.utils.gemini import call_gemini
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,15 +121,17 @@ class TestGenerator:
                 "or google_api_key in the Nengok config."
             )
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
+        return call_gemini(
+            client,
             model=self.config.diagnoser_model,
             contents=[{"role": "user", "parts": [{"text": prompt}]}],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=_GeminiCaseList,
             ),
+            env_var_hint="NENGOK_DIAGNOSER_MODEL",
+            role_hint="Test Generator",
         )
-        return response.text or ""
 
 
 def _strip_code_fence(text: str) -> str:
