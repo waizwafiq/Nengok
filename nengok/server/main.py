@@ -29,6 +29,7 @@ from starlette.types import Scope
 from nengok import __version__
 from nengok.config import NengokConfig
 from nengok.server.auth import require_dashboard_token
+from nengok.server.health import HealthChecker
 from nengok.server.rate_limit import DashboardRateLimitMiddleware, build_limiter
 from nengok.server.routes import approvals, artifacts, clusters, dashboard, experiments
 from nengok.utils.logging import get_logger
@@ -86,6 +87,12 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     app.add_middleware(DashboardRateLimitMiddleware, limiter=limiter)
 
     app.state.config = config
+    app.state.health_checker = HealthChecker()
+
+    @app.get("/health", include_in_schema=False)
+    def public_health() -> dict[str, object]:
+        checker: HealthChecker = app.state.health_checker
+        return checker.snapshot(app.state.config)
 
     api_dependencies = [Depends(require_dashboard_token)]
     app.include_router(clusters.router, prefix="/api/v1", dependencies=api_dependencies)
