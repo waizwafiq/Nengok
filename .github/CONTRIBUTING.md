@@ -205,6 +205,8 @@ The runner is what the Phoenix experiment task calls per dataset row, with the c
 
 After a successful cycle Phoenix will hold two projects: your monitored project plus `nengok-meta-agent`, which stores the four-span trace per cycle (`nengok.cycle` -> `observer` / `diagnoser` / `fixer` / `verifier`) the orchestrator emits via `nengok.utils.tracing`. The meta-tracer needs `arize-phoenix-otel` (already in the `phoenix` extra). When the extra is missing, the spans silently drop and the loop runs as before.
 
+If a later change breaks the install, run `nengok doctor` for a read-only sweep. Each probe lives under [nengok/diagnostics/](../nengok/diagnostics/) and reports one line of the same `[ok|warn|fail] name: detail` shape, with a copy-paste fix hint printed below each non-OK probe. The default set checks the config file, Phoenix reachability and project visibility, a Gemini one-token ping, the optional baseline prompt path, and the agent runner. Exit codes are 0 on all pass and 1 on any fail; pass `--strict` to also fail on warnings (useful when an empty Phoenix project would otherwise hide a setup mistake), or `--json` for a machine-readable payload that drops into a CI gate.
+
 ### 7. Launch the dashboard (optional)
 
 ```bash
