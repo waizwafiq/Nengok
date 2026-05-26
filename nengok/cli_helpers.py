@@ -15,6 +15,8 @@ def write_config_file(
     phoenix_base_url: str,
     phoenix_api_key: str | None,
     project_identifier: str,
+    google_api_key: str | None = None,
+    agent_runner: str | None = None,
 ) -> Path:
     """
     Render `~/.nengok/config.toml`.
@@ -26,10 +28,18 @@ def write_config_file(
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    api_key_line = (
-        f'phoenix_api_key = "{phoenix_api_key}"\n'
-        if phoenix_api_key is not None
-        else '# phoenix_api_key = "..."   # or set PHOENIX_API_KEY in the environment\n'
+    phoenix_key_line = (
+        f'phoenix_api_key = "{phoenix_api_key}"'
+        if phoenix_api_key
+        else '# phoenix_api_key = "..."   # or set PHOENIX_API_KEY in the environment'
+    )
+    google_key_line = (
+        f'google_api_key = "{google_api_key}"'
+        if google_api_key
+        else '# google_api_key = "..."   # or set GOOGLE_API_KEY in the environment'
+    )
+    agent_runner_line = (
+        f'agent_runner = "{agent_runner}"' if agent_runner else '# agent_runner = "module.path:ClassName"'
     )
 
     body = dedent(
@@ -39,8 +49,10 @@ def write_config_file(
 
         [nengok]
         phoenix_base_url = "{phoenix_base_url}"
-        {api_key_line.rstrip()}
+        {phoenix_key_line}
+        {google_key_line}
         project_identifier = "{project_identifier}"
+        {agent_runner_line}
         """
     ).lstrip()
 

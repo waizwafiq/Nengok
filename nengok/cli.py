@@ -65,32 +65,151 @@ def main(
 
 @app.command()
 def init(
-    phoenix_url: Annotated[str, typer.Option("--phoenix-url", help="Base URL of your Phoenix instance.")],
-    api_key: Annotated[
+    phoenix_url: Annotated[
+        str | None, typer.Option("--phoenix-url", help="Base URL of your Phoenix instance.")
+    ] = None,
+    phoenix_api_key_flag: Annotated[
         str | None,
         typer.Option(
-            "--api-key", help="Phoenix API key. If omitted, falls back to PHOENIX_API_KEY at runtime."
+            "--phoenix-api-key",
+            "--api-key",
+            help="Phoenix API key (only needed for Cloud or auth-gated Phoenix).",
         ),
     ] = None,
+    google_api_key_flag: Annotated[
+        str | None,
+        typer.Option("--google-api-key", help="Gemini API key. Falls back to GOOGLE_API_KEY."),
+    ] = None,
     project: Annotated[
-        str,
+        str | None,
         typer.Option("--project", help="Phoenix project identifier to monitor."),
-    ] = "default",
+    ] = None,
+    agent_runner: Annotated[
+        str | None,
+        typer.Option("--agent-runner", help="Dotted path 'module.path:ClassName' for the monitored agent."),
+    ] = None,
     config_path: Annotated[
         Path, typer.Option("--config-path", help="Where to write the config file.")
     ] = DEFAULT_CONFIG_PATH,
+    non_interactive: Annotated[
+        bool,
+        typer.Option(
+            "--non-interactive",
+            help="Skip prompts; all values must come from flags or env. Exits nonzero on any miss.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Write the config even if the connectivity probes fail."),
+    ] = False,
 ) -> None:
-    """Write a local Nengok config file."""
+    """Interactive wizard that writes a working ~/.nengok/config.toml."""
+    from nengok import init_wizard
     from nengok.cli_helpers import write_config_file
+
+    phoenix_base_url, phoenix_api_key, google_api_key, project_name, runner_choice = _collect_init_values(
+        phoenix_url=phoenix_url,
+        phoenix_api_key_flag=phoenix_api_key_flag,
+        google_api_key_flag=google_api_key_flag,
+        project=project,
+        agent_runner=agent_runner,
+        non_interactive=non_interactive,
+    )
+
+    typer.echo("")
+    typer.echo("Running connectivity probes...")
+    results = init_wizard.run_probes(
+        phoenix_base_url=phoenix_base_url,
+        phoenix_api_key=phoenix_api_key,
+        google_api_key=google_api_key,
+        target_dir=config_path.parent,
+    )
+    typer.echo(init_wizard.format_probe_summary(results))
+
+    if not init_wizard.all_passed(results) and not force:
+        typer.echo("", err=True)
+        typer.echo(
+            "One or more probes failed. Fix the issue above or rerun with --force to write anyway.", err=True
+        )
+        raise typer.Exit(code=1)
 
     written = write_config_file(
         config_path=config_path,
-        phoenix_base_url=phoenix_url,
-        phoenix_api_key=api_key,
-        project_identifier=project,
+        phoenix_base_url=phoenix_base_url,
+        phoenix_api_key=phoenix_api_key,
+        project_identifier=project_name,
+        google_api_key=google_api_key,
+        agent_runner=runner_choice,
     )
+    typer.echo("")
     typer.echo(f"Wrote {written}.")
-    typer.echo("Next: nengok run")
+    typer.echo(
+        "Next: run `python -m sample_agent.seed --count 5` to seed traces, then `nengok run` to see your first cycle."
+    )
+
+
+def _collect_init_values(
+    *,
+    phoenix_url: str | None,
+    phoenix_api_key_flag: str | None,
+    google_api_key_flag: str | None,
+    project: str | None,
+    agent_runner: str | None,
+    non_interactive: bool,
+) -> tuple[str, str | None, str, str, str | None]:
+    """
+    Resolve the five required values from flags, env, and (optionally) prompts.
+
+    Order of precedence per value: CLI flag wins, then env var, then the
+    wizard prompt. `--non-interactive` skips the prompt step and exits 2
+    if anything is still missing afterwards.
+    """
+    from nengok import init_wizard
+
+    phoenix_base_url = phoenix_url or init_wizard.env_default("PHOENIX_BASE_URL")
+    phoenix_api_key = phoenix_api_key_flag or init_wizard.env_default("PHOENIX_API_KEY")
+    google_api_key = google_api_key_flag or init_wizard.env_default("GOOGLE_API_KEY")
+    project_name = project or init_wizard.env_default("NENGOK_PROJECT")
+    runner_choice = agent_runner
+
+    if non_interactive:
+        missing: list[str] = []
+        if not phoenix_base_url:
+            missing.append("--phoenix-url / PHOENIX_BASE_URL")
+        if not google_api_key:
+            missing.append("--google-api-key / GOOGLE_API_KEY")
+        if not project_name:
+            missing.append("--project / NENGOK_PROJECT")
+        if missing:
+            typer.echo("Error: --non-interactive requires these values:", err=True)
+            for item in missing:
+                typer.echo(f"  - {item}", err=True)
+            raise typer.Exit(code=2)
+        return (
+            phoenix_base_url or "",
+            phoenix_api_key,
+            google_api_key or "",
+            project_name or "",
+            runner_choice,
+        )
+
+    if not phoenix_base_url:
+        phoenix_base_url, prompted_api_key = init_wizard.prompt_phoenix_choice()
+        if phoenix_api_key is None:
+            phoenix_api_key = prompted_api_key
+
+    if not google_api_key:
+        google_api_key = init_wizard.prompt_google_api_key(
+            probe=lambda key: init_wizard.probe_gemini(api_key=key),
+        )
+
+    if not project_name:
+        project_name = init_wizard.prompt_project_name()
+
+    if runner_choice is None:
+        runner_choice = init_wizard.prompt_agent_runner()
+
+    return phoenix_base_url, phoenix_api_key, google_api_key, project_name, runner_choice
 
 
 @app.command()
