@@ -211,12 +211,12 @@ def test_run_golden_comparison_creates_dataset_when_missing(
     assert baseline.pass_rate == 1.0
     assert fix.pass_rate == 1.0
     datasets = wrapper._client.datasets
-    assert datasets.get_calls == ["travel-planner-golden-v1"]
+    assert datasets.get_calls == ["travel-planner-golden-v2"]
     assert len(datasets.create_calls) == 1
-    assert datasets.create_calls[0]["name"] == "travel-planner-golden-v1"
+    assert datasets.create_calls[0]["name"] == "travel-planner-golden-v2"
     assert {call["experiment_name"] for call in wrapper._client.experiments.calls} == {
-        "golden-baseline-v1",
-        "golden-fix-v1",
+        "golden-baseline-v2",
+        "golden-fix-v2",
     }
 
 
