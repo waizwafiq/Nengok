@@ -120,6 +120,8 @@ The four Gemini models in the loop are all overridable via environment variables
 
 The two `NENGOK_*` vars feed `NengokConfig.diagnoser_model` and `NengokConfig.judge_model` through `_read_env()` in `nengok/config.py`, so they win over the on-disk TOML and lose to constructor overrides. The two sample-agent vars are read directly inside each agent's `build_*` / `answer_*` function. The defaults assume Gemini; swapping in a non-Gemini model requires more than an env-var bump because the agents call `google-genai` directly.
 
+If you set one of these to a string Google does not recognise, every Gemini call routes through `nengok/utils/gemini.py::call_gemini` and the SDK raises `InvalidGeminiModelError` (or `GeminiAuthError` / `GeminiQuotaError` for 401/403/429) with a message that names the env var you configured. The error replaces the raw `google.genai.errors.ClientError` stack trace, so a typo surfaces as `Clusterer: model 'gemini-1.5-pro' is not a valid Gemini model. Override via the NENGOK_DIAGNOSER_MODEL env var.` instead of a 404 deep inside the call site.
+
 ### 4. Start a local Phoenix (optional, for end-to-end work)
 
 If you already have Phoenix Cloud or a remote Phoenix, point `PHOENIX_BASE_URL` and `PHOENIX_API_KEY` at it in `.env` and skip this step.
