@@ -28,6 +28,7 @@ from nengok.core.fixer.prompt_proposer import PromptProposer
 from nengok.core.fixer.test_generator import TestGenerator
 from nengok.core.incidents import write_incident
 from nengok.core.observer.anomaly_filter import AnomalyFilter
+from nengok.core.observer.redactor import Redactor
 from nengok.core.observer.sampler import SpanSampler
 from nengok.core.types import (
     AnomalousSpan,
@@ -59,17 +60,19 @@ class Orchestrator:
         self._phoenix = PhoenixWrapper(self.config)
         self._state = StateStore(self.config.state_db_path)
 
+        self._redactor = Redactor.from_config(self.config)
+
         self._sampler = SpanSampler(self._phoenix, self.config)
         self._anomaly_filter = AnomalyFilter()
-        self._clusterer = Clusterer(self.config)
-        self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix)
+        self._clusterer = Clusterer(self.config, redactor=self._redactor)
+        self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix, redactor=self._redactor)
 
         self._test_generator = TestGenerator(self.config)
-        self._prompt_proposer = PromptProposer(self.config, phoenix=self._phoenix)
+        self._prompt_proposer = PromptProposer(self.config, phoenix=self._phoenix, redactor=self._redactor)
         self._experiment_runner = ExperimentRunner(self._phoenix, self.config)
 
         self._gate = VerifierGate(self.config)
-        self._artifact_writer = ArtifactWriter(self.config.artifacts_dir)
+        self._artifact_writer = ArtifactWriter(self.config.artifacts_dir, redactor=self._redactor)
 
     def run_once(self, *, dry_run: bool = False) -> CycleResult:
         """One full Observer -> Diagnoser -> Fixer -> Verifier pass."""
