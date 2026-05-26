@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, RootCauseHypothesis, TraceSpan
 from nengok.errors import MissingApiKeyError
 from nengok.phoenix.client import PhoenixWrapper
@@ -39,6 +40,7 @@ class Hypothesizer:
     phoenix: PhoenixWrapper | None = None
     gemini_call: GeminiTextCall | None = None
     cost_tracker: CostTracker | None = None
+    redactor: Redactor | None = None
 
     def hypothesize(
         self,
@@ -77,11 +79,13 @@ class Hypothesizer:
         catch drift, and retry once with a stricter reminder when the
         first response fails ``ValidationError``.
         """
+        redactor = self.redactor or Redactor.from_config(self.config)
         prompt = _build_diagnoser_prompt(
             cluster=cluster,
             exemplars=exemplars,
             current_prompt=current_prompt,
             char_budget=self.config.cluster_trace_char_budget,
+            redactor=redactor,
         )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
@@ -147,6 +151,8 @@ def _exemplar_rows(
     cluster: Cluster,
     exemplars: list[TraceSpan],
     char_budget: int,
+    *,
+    redactor: Redactor,
 ) -> list[dict[str, Any]]:
     by_id = {span.span_id: span for span in exemplars}
     rows: list[dict[str, Any]] = []
@@ -161,8 +167,8 @@ def _exemplar_rows(
                 "operation": span.name,
                 "status_code": span.status_code,
                 "latency_ms": span.latency_ms,
-                "input": _trim(span.input_value, char_budget),
-                "output": _trim(span.output_value, char_budget),
+                "input": redactor.redact(_trim(span.input_value, char_budget)),
+                "output": redactor.redact(_trim(span.output_value, char_budget)),
                 "attributes": span.attributes,
             }
         )
@@ -175,9 +181,10 @@ def _build_diagnoser_prompt(
     exemplars: list[TraceSpan],
     current_prompt: str | None,
     char_budget: int,
+    redactor: Redactor,
 ) -> str:
     schema_hint = json.dumps(RootCauseHypothesis.model_json_schema(), indent=2)
-    rows = _exemplar_rows(cluster, exemplars, char_budget)
+    rows = _exemplar_rows(cluster, exemplars, char_budget, redactor=redactor)
     prompt_block = current_prompt.strip() if current_prompt else "(baseline prompt not provided)"
 
     return (

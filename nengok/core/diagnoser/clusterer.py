@@ -21,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.observer.redactor import Redactor
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
 from nengok.errors import MissingApiKeyError
 from nengok.utils.gemini import RetryPolicy, call_gemini
@@ -75,6 +76,7 @@ class Clusterer:
     config: NengokConfig
     gemini_call: GeminiTextCall | None = None
     cost_tracker: CostTracker | None = None
+    redactor: Redactor | None = None
 
     def cluster(self, anomalies: list[AnomalousSpan]) -> list[Cluster]:
         """Return one Cluster per detected failure mode."""
@@ -112,7 +114,8 @@ class Clusterer:
         instructed to return JSON matching ``_GeminiClustererResponse``.
         Span ids the model omits from every group are silently dropped.
         """
-        prompt = _build_clusterer_prompt(anomalies, self.config.cluster_trace_char_budget)
+        redactor = self.redactor or Redactor.from_config(self.config)
+        prompt = _build_clusterer_prompt(anomalies, self.config.cluster_trace_char_budget, redactor=redactor)
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
         try:
@@ -170,13 +173,18 @@ def _trim(value: str | None, budget: int) -> str:
     return value[:budget] + "...<truncated>"
 
 
-def _build_clusterer_prompt(anomalies: list[AnomalousSpan], char_budget: int) -> str:
+def _build_clusterer_prompt(
+    anomalies: list[AnomalousSpan],
+    char_budget: int,
+    *,
+    redactor: Redactor,
+) -> str:
     rows: list[dict[str, Any]] = [
         {
             "span_id": a.span.span_id,
             "operation": a.span.name,
-            "input": _trim(a.span.input_value, char_budget),
-            "output": _trim(a.span.output_value, char_budget),
+            "input": redactor.redact(_trim(a.span.input_value, char_budget)),
+            "output": redactor.redact(_trim(a.span.output_value, char_budget)),
             "attributes": a.span.attributes,
             "signals": [s.value for s in a.signals],
         }
