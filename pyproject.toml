@@ -96,11 +96,15 @@ artifacts = ["nengok/server/static/**"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "nengok/state/schema.sql" = "nengok/state/schema.sql"
+"nengok/templates/config-local.toml" = "nengok/templates/config-local.toml"
+"nengok/templates/config-cloud.toml" = "nengok/templates/config-cloud.toml"
+"nengok/templates/config-qa-agent.toml" = "nengok/templates/config-qa-agent.toml"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/nengok",
     "/frontend",
+    "/examples",
     "/hatch_build.py",
     "/README.md",
     "/LICENSE",
