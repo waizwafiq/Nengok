@@ -46,6 +46,10 @@ DEFAULT_GEMINI_TIMEOUT_SECONDS = 45.0
 DEFAULT_GEMINI_MAX_RETRIES = 3
 DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS = 1.0
 
+DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS = 15.0
+DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS = 60.0
+DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS = 300.0
+
 
 @dataclass(frozen=True)
 class NengokConfig:
@@ -83,6 +87,10 @@ class NengokConfig:
     gemini_timeout_seconds: float = DEFAULT_GEMINI_TIMEOUT_SECONDS
     gemini_max_retries: int = DEFAULT_GEMINI_MAX_RETRIES
     gemini_min_retry_backoff_seconds: float = DEFAULT_GEMINI_MIN_RETRY_BACKOFF_SECONDS
+
+    phoenix_read_timeout_seconds: float = DEFAULT_PHOENIX_READ_TIMEOUT_SECONDS
+    phoenix_write_timeout_seconds: float = DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS
+    phoenix_experiment_timeout_seconds: float = DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS
 
     @classmethod
     def load(cls, config_path: Path | None = None, **overrides: Any) -> NengokConfig:

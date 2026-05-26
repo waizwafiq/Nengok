@@ -13,20 +13,25 @@ the SDK calls in one module:
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from nengok.config import NengokConfig
 from nengok.core.evaluators.aggregate import summarize_experiment
 from nengok.core.evaluators.code_evals import CodeEvaluator
 from nengok.core.evaluators.llm_judges import JudgeSpec, _ensure_phoenix_judge
 from nengok.core.types import RegressionTestCase, TraceSpan
+from nengok.errors import PhoenixTimeoutError
 from nengok.phoenix.spans import normalize_span
 from nengok.runners.agent_runner import AgentRunner, get_runner
 from nengok.utils.logging import get_logger
+
+T = TypeVar("T")
 
 logger = get_logger(__name__)
 
@@ -49,6 +54,33 @@ class PhoenixWrapper:
         self._golden_cache: dict[str, Any] | None = None
         self._golden_dataset_ref: Any | None = None
 
+    def _call_with_timeout(self, fn: Callable[[], T], *, method: str, timeout_seconds: float) -> T:
+        """
+        Run `fn` on a worker thread; raise `PhoenixTimeoutError` past the budget.
+
+        The Phoenix HTTP client does not accept a per-call timeout
+        kwarg, so wall-clock enforcement happens out-of-process via
+        `ThreadPoolExecutor`. The cancelled future keeps running until
+        the request library notices; that is acceptable for a tool that
+        is about to escalate the cluster anyway.
+        """
+        if timeout_seconds <= 0:
+            return fn()
+        started = time.monotonic()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(fn)
+            try:
+                return future.result(timeout=timeout_seconds)
+            except concurrent.futures.TimeoutError as exc:
+                future.cancel()
+                observed = time.monotonic() - started
+                raise PhoenixTimeoutError(
+                    f"Phoenix {method} exceeded {timeout_seconds:.1f}s " f"(observed {observed:.1f}s).",
+                    method=method,
+                    timeout_seconds=timeout_seconds,
+                    observed_seconds=observed,
+                ) from exc
+
     def _get_client(self) -> Any:
         if self._client is not None:
             return self._client
@@ -68,7 +100,11 @@ class PhoenixWrapper:
 
     def get_spans(self, *, project_identifier: str, limit: int) -> list[TraceSpan]:
         client = self._get_client()
-        raw = client.spans.get_spans(project_identifier=project_identifier, limit=limit)
+        raw = self._call_with_timeout(
+            lambda: client.spans.get_spans(project_identifier=project_identifier, limit=limit),
+            method="spans.get_spans",
+            timeout_seconds=self._config.phoenix_read_timeout_seconds,
+        )
         return [normalize_span(item) for item in raw]
 
     def get_spans_by_ids(
@@ -102,7 +138,11 @@ class PhoenixWrapper:
         """
         client = self._get_client()
         try:
-            version = client.prompts.get(prompt_identifier=name)
+            version = self._call_with_timeout(
+                lambda: client.prompts.get(prompt_identifier=name),
+                method="prompts.get",
+                timeout_seconds=self._config.phoenix_read_timeout_seconds,
+            )
         except ValueError:
             return None
         template = getattr(version, "template", None)
@@ -114,7 +154,11 @@ class PhoenixWrapper:
         client = self._get_client()
         inputs = [c.input for c in cases]
         outputs = [c.expected for c in cases]
-        return client.datasets.create_dataset(name=name, inputs=inputs, outputs=outputs)
+        return self._call_with_timeout(
+            lambda: client.datasets.create_dataset(name=name, inputs=inputs, outputs=outputs),
+            method="datasets.create_dataset",
+            timeout_seconds=self._config.phoenix_write_timeout_seconds,
+        )
 
     def get_dataset(self, *, name: str) -> Any | None:
         """
@@ -126,7 +170,11 @@ class PhoenixWrapper:
         """
         client = self._get_client()
         try:
-            return client.datasets.get_dataset(dataset=name)
+            return self._call_with_timeout(
+                lambda: client.datasets.get_dataset(dataset=name),
+                method="datasets.get_dataset",
+                timeout_seconds=self._config.phoenix_read_timeout_seconds,
+            )
         except ValueError:
             return None
 
@@ -145,11 +193,19 @@ class PhoenixWrapper:
         at the call site.
         """
         client = self._get_client()
-        experiment = client.experiments.get_experiment(experiment_id=experiment_id)
+        experiment = self._call_with_timeout(
+            lambda: client.experiments.get_experiment(experiment_id=experiment_id),
+            method="experiments.get_experiment",
+            timeout_seconds=self._config.phoenix_read_timeout_seconds,
+        )
         resolved = _resolve_evaluators(evaluators)
-        return client.experiments.evaluate_experiment(
-            experiment=experiment,
-            evaluators=resolved,
+        return self._call_with_timeout(
+            lambda: client.experiments.evaluate_experiment(
+                experiment=experiment,
+                evaluators=resolved,
+            ),
+            method="experiments.evaluate_experiment",
+            timeout_seconds=self._config.phoenix_experiment_timeout_seconds,
         )
 
     def run_experiment(
@@ -180,13 +236,17 @@ class PhoenixWrapper:
         resolved, code_names = _resolve_evaluators_with_names(evaluators)
         task = _build_task(prompt=prompt, runner=runner)
 
-        ran = client.experiments.run_experiment(
-            dataset=dataset_ref,
-            task=task,
-            evaluators=resolved,
-            experiment_name=experiment_name,
-            dry_run=dry_run,
-            print_summary=False,
+        ran = self._call_with_timeout(
+            lambda: client.experiments.run_experiment(
+                dataset=dataset_ref,
+                task=task,
+                evaluators=resolved,
+                experiment_name=experiment_name,
+                dry_run=dry_run,
+                print_summary=False,
+            ),
+            method="experiments.run_experiment",
+            timeout_seconds=self._config.phoenix_experiment_timeout_seconds,
         )
 
         summary = summarize_experiment(

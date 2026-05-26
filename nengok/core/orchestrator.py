@@ -24,6 +24,7 @@ from nengok.core.diagnoser.hypothesizer import Hypothesizer
 from nengok.core.fixer.experiment_runner import ExperimentRunner
 from nengok.core.fixer.prompt_proposer import PromptProposer
 from nengok.core.fixer.test_generator import TestGenerator
+from nengok.core.incidents import write_incident
 from nengok.core.observer.anomaly_filter import AnomalyFilter
 from nengok.core.observer.sampler import SpanSampler
 from nengok.core.types import (
@@ -36,6 +37,7 @@ from nengok.core.types import (
 )
 from nengok.core.verifier.artifact_writer import ArtifactWriter
 from nengok.core.verifier.gate import VerifierGate
+from nengok.errors import PhoenixTimeoutError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.state.store import StateStore
 from nengok.utils.logging import get_logger
@@ -132,44 +134,55 @@ class Orchestrator:
 
                 cluster_attrs = _cluster_span_attrs(cluster, signal_counts)
 
-                with tracer.start_as_current_span("fixer") as fixer_span:
-                    set_attributes(fixer_span, cluster_attrs)
-                    cases = self._test_generator.generate(cluster)
-                    proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
-                    set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
+                try:
+                    with tracer.start_as_current_span("fixer") as fixer_span:
+                        set_attributes(fixer_span, cluster_attrs)
+                        cases = self._test_generator.generate(cluster)
+                        proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
+                        set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
 
-                    if dry_run:
-                        logger.info("Dry run: skipping experiment for cluster '%s'", cluster.name)
-                        continue
+                        if dry_run:
+                            logger.info("Dry run: skipping experiment for cluster '%s'", cluster.name)
+                            continue
 
-                    result = self._experiment_runner.run(cluster=cluster, cases=cases, proposal=proposal)
-                    self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
+                        result = self._experiment_runner.run(cluster=cluster, cases=cases, proposal=proposal)
+                        self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
 
-                with tracer.start_as_current_span("verifier") as verifier_span:
-                    set_attributes(verifier_span, cluster_attrs)
-                    verification = self._gate.evaluate(result)
-                    set_attributes(
-                        verifier_span,
-                        {"nengok.verifier.outcome": verification.outcome.value},
+                    with tracer.start_as_current_span("verifier") as verifier_span:
+                        set_attributes(verifier_span, cluster_attrs)
+                        verification = self._gate.evaluate(result)
+                        set_attributes(
+                            verifier_span,
+                            {"nengok.verifier.outcome": verification.outcome.value},
+                        )
+
+                        if verification.outcome is VerificationOutcome.PASSED:
+                            artifact = self._artifact_writer.write(
+                                cluster=cluster,
+                                cases=cases,
+                                proposal=proposal,
+                                verification=verification,
+                            )
+                            artifacts.append(artifact)
+                            self._state.mark_status(cluster.cluster_id, ClusterStatus.FIX_PROPOSED)
+                        else:
+                            escalations += 1
+                            self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
+                            logger.warning(
+                                "Cluster '%s' escalated: %s",
+                                cluster.name,
+                                verification.outcome.value,
+                            )
+                except PhoenixTimeoutError as exc:
+                    escalations += 1
+                    self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
+                    self._record_phoenix_timeout(cluster=cluster, exc=exc)
+                    logger.warning(
+                        "Cluster '%s' escalated: phoenix_timeout (%s, %.1fs)",
+                        cluster.name,
+                        exc.method,
+                        exc.timeout_seconds,
                     )
-
-                    if verification.outcome is VerificationOutcome.PASSED:
-                        artifact = self._artifact_writer.write(
-                            cluster=cluster,
-                            cases=cases,
-                            proposal=proposal,
-                            verification=verification,
-                        )
-                        artifacts.append(artifact)
-                        self._state.mark_status(cluster.cluster_id, ClusterStatus.FIX_PROPOSED)
-                    else:
-                        escalations += 1
-                        self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
-                        logger.warning(
-                            "Cluster '%s' escalated: %s",
-                            cluster.name,
-                            verification.outcome.value,
-                        )
 
             finished_at = datetime.now(UTC)
             set_attributes(
@@ -196,6 +209,29 @@ class Orchestrator:
             return
         register_meta_tracer()
         Orchestrator._traced = True
+
+    def _record_phoenix_timeout(self, *, cluster: Cluster, exc: PhoenixTimeoutError) -> None:
+        body_lines = [
+            f"- cluster_id: `{cluster.cluster_id}`",
+            f"- cluster_name: `{cluster.name}`",
+            f"- phoenix_method: `{exc.method}`",
+            f"- configured_timeout_seconds: {exc.timeout_seconds:.1f}",
+        ]
+        if exc.observed_seconds is not None:
+            body_lines.append(f"- observed_seconds: {exc.observed_seconds:.1f}")
+        body_lines.append("")
+        body_lines.append(
+            "Phoenix did not respond inside the configured budget. The cluster is "
+            "marked escalated for human review. Raise `phoenix_*_timeout_seconds` "
+            "in `~/.nengok/config.toml` to give Phoenix more time, or investigate "
+            "why this call ran long."
+        )
+        write_incident(
+            artifacts_dir=self.config.artifacts_dir,
+            filename=f"phoenix-timeout-{cluster.cluster_id}.md",
+            title=f"Phoenix timeout while processing cluster {cluster.name}",
+            body="\n".join(body_lines),
+        )
 
 
 def _signal_counts_by_cluster(
