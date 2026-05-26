@@ -15,13 +15,25 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
+import click
 import typer
 from dotenv import load_dotenv
 
 from nengok import __version__
 from nengok.config import DEFAULT_CONFIG_PATH, NengokConfig
+from nengok.errors import ConfigError
 from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import configure_logging, get_logger
+
+
+class NengokCLIError(click.ClickException):
+    """Click exception that exits 2 and prints just the message, no traceback."""
+
+    exit_code = 2
+
+    def format_message(self) -> str:
+        return self.message
+
 
 app = typer.Typer(
     name="nengok",
@@ -281,9 +293,10 @@ def _load_config(**overrides: Any) -> NengokConfig:
     try:
         cleaned = {k: v for k, v in overrides.items() if v is not None}
         return NengokConfig.load(**cleaned)
+    except ConfigError as exc:
+        raise NengokCLIError(str(exc)) from exc
     except ValueError as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(code=1) from exc
+        raise NengokCLIError(str(exc)) from exc
 
 
 if __name__ == "__main__":  # pragma: no cover
