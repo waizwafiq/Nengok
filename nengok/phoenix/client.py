@@ -33,7 +33,8 @@ from nengok.errors import (
     PhoenixTimeoutError,
 )
 from nengok.phoenix.spans import normalize_span
-from nengok.runners.agent_runner import AgentRunner, get_runner
+from nengok.runners._task import build_task
+from nengok.runners.agent_runner import get_runner
 from nengok.utils.logging import get_logger
 
 T = TypeVar("T")
@@ -242,7 +243,7 @@ class PhoenixWrapper:
 
         client = self._get_client()
         resolved, code_names = _resolve_evaluators_with_names(evaluators)
-        task = _build_task(prompt=prompt, runner=runner)
+        task = build_task(runner, prompt)
 
         ran = self._call_with_timeout(
             lambda: client.experiments.run_experiment(
@@ -385,14 +386,3 @@ def _resolve_evaluators_with_names(
             resolved.append(evaluator)
             code_names.add(getattr(evaluator, "__name__", repr(evaluator)))
     return resolved, code_names
-
-
-def _build_task(*, prompt: str, runner: AgentRunner) -> Callable[..., dict[str, Any]]:
-    """Wrap an AgentRunner in the signature Phoenix's run_experiment calls."""
-
-    def task(example: Mapping[str, Any]) -> dict[str, Any]:
-        raw_input = example.get("input") or {}
-        input_row = dict(raw_input) if isinstance(raw_input, Mapping) else {"value": raw_input}
-        return runner(input_row, prompt)
-
-    return task
