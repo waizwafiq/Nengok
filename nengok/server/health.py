@@ -111,7 +111,8 @@ def check_phoenix_reachable(
         request.add_header("Authorization", f"Bearer {config.phoenix_api_key}")
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            return 200 <= response.getcode() < 300
+            status_code = int(response.getcode())
+            return 200 <= status_code < 300
     except urllib.error.HTTPError as exc:
         logger.debug("phoenix health probe returned HTTP %s", exc.code)
         return False
@@ -162,7 +163,7 @@ def check_db_writable(config: NengokConfig) -> bool:
 
     try:
         with sqlite3.connect(db_path) as conn:
-            conn.execute("SELECT 1").fetchone()
+            conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
     except sqlite3.Error as exc:
         logger.debug("db health probe could not open %s: %s", db_path, exc)
         return False
