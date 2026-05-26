@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from google.genai import errors as genai_errors
+
+genai_errors = pytest.importorskip(
+    "google.genai.errors",
+    reason="google-genai not installed; the wrapper's tests need the gemini extra.",
+)
 
 from nengok.utils.gemini import (
     GeminiAuthError,

@@ -110,7 +110,11 @@ def test_run_experiment_accepts_phoenix_dataclass_evaluation_runs(
     del runner_calls
     from datetime import UTC, datetime
 
-    from phoenix.client.resources.experiments import ExperimentEvaluationRun
+    experiments_module = pytest.importorskip(
+        "phoenix.client.resources.experiments",
+        reason="phoenix extra not installed; this regression test needs the real dataclass.",
+    )
+    ExperimentEvaluationRun = experiments_module.ExperimentEvaluationRun
 
     base = _stub_ran_experiment()
     now = datetime.now(UTC)

@@ -129,7 +129,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["B011", "SIM117"]
+"tests/**" = ["B011", "E402", "SIM117"]
 "phoenix_harness/**" = ["B011"]
 
 [tool.ruff.format]
