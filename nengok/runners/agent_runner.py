@@ -8,9 +8,10 @@ so older bootstrap modules keep working while new code targets the
 Protocol directly.
 
 The orchestrator looks up the runner by project name when wiring an
-experiment. Phase 8.2 adds a config-driven loader that constructs a
-runner from a dotted path; this registry remains for users who prefer
-imperative registration from their own bootstrap.
+experiment. The config-driven loader at
+:mod:`nengok.runners.loader` is the other way to bind a runner; this
+registry stays in place for bootstrap modules that prefer imperative
+registration.
 """
 
 from __future__ import annotations

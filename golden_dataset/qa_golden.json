@@ -1,0 +1,77 @@
+{
+  "name": "qa_agent_golden",
+  "description": "Curated golden cases for the retrieval-augmented QA demo agent. Each input names a question the bundled CORPUS already answers, and the expected payload pins the snippet id whose body the answer must quote.",
+  "version": 1,
+  "cases": [
+    {
+      "case_id": "qa-001",
+      "input": {
+        "question": "What is Nengok in one sentence?",
+        "failure": "none"
+      },
+      "expected": {
+        "contains": "pip-installable SDK",
+        "cites_snippet": "nengok-overview"
+      },
+      "metadata": {
+        "scenario": "baseline-direct-answer"
+      }
+    },
+    {
+      "case_id": "qa-002",
+      "input": {
+        "question": "Does Nengok auto-apply fixes or wait for a human?",
+        "failure": "none"
+      },
+      "expected": {
+        "contains": "approve",
+        "cites_snippet": "human-in-the-loop"
+      },
+      "metadata": {
+        "scenario": "policy-question"
+      }
+    },
+    {
+      "case_id": "qa-003",
+      "input": {
+        "question": "Where do Nengok artifacts get written?",
+        "failure": "none"
+      },
+      "expected": {
+        "contains": "local",
+        "cites_snippet": "data-egress"
+      },
+      "metadata": {
+        "scenario": "data-handling-question"
+      }
+    },
+    {
+      "case_id": "qa-004",
+      "input": {
+        "question": "Which observability platform does Nengok integrate with?",
+        "failure": "none"
+      },
+      "expected": {
+        "contains": "Phoenix",
+        "cites_snippet": "phoenix-overview"
+      },
+      "metadata": {
+        "scenario": "integration-question"
+      }
+    },
+    {
+      "case_id": "qa-005",
+      "input": {
+        "question": "When does Nengok use an LLM-as-Judge instead of a code evaluator?",
+        "failure": "none"
+      },
+      "expected": {
+        "contains": "coherence",
+        "cites_snippet": "evaluator-policy"
+      },
+      "metadata": {
+        "scenario": "evaluator-policy-question"
+      }
+    }
+  ]
+}
