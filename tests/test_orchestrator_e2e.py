@@ -35,10 +35,8 @@ from nengok.core.types import (
     FixArtifact,
     PromptProposal,
     RegressionTestCase,
-    RootCauseHypothesis,
     TraceSpan,
     Verification,
-    VerificationOutcome,
 )
 from nengok.utils.gemini import GeminiAuthError, GeminiQuotaError, InvalidGeminiModelError
 
