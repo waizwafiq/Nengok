@@ -154,7 +154,7 @@ The `sample_agent/` package ships a Travel Planner with three runtime-toggleable
 | `weather` | Temperature unit silently switches from F to C | Agent suggests a parka for 75 °F weather |
 | `hotels` | Endpoint times out 40 % of the time | Agent hallucinates hotel names instead of erroring |
 
-A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retrieval-augmented Q&A with its own `retriever` failure mode, included so Nengok can point at a non-Travel-Planner project without code changes.
+A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retrieval-augmented Q&A with three injectable failure modes: `retriever` drops the retrieved context, `hallucination` patches the prompt to answer from memory, and `wrong_attribution` rotates snippet ids so the citation no longer matches its body. Nengok can point at it without code changes.
 
 Run the demo with one copy-paste:
 
@@ -165,6 +165,36 @@ nengok run
 ```
 
 `sample_agent.seed` fires five runs of the Travel Planner with every failure mode injected, then prints the Phoenix project URL. Hand the same project name to `nengok init` and `nengok run` walks the four-stage loop end to end. Run `nengok dashboard` afterwards to approve the verified fix.
+
+## Plug in Your Own Agent
+
+Nengok loads any class that satisfies the `AgentRunner` protocol: a `name` property and a `run(agent_input: dict, prompt: str) -> dict` method. Drop the class in your own package, then point Nengok at it from `~/.nengok/config.toml`:
+
+```python
+# my_pkg/runner.py
+from typing import Any
+
+
+class MyAgent:
+    @property
+    def name(self) -> str:
+        return "my-agent"
+
+    def run(self, agent_input: dict[str, Any], prompt: str) -> dict[str, Any]:
+        from my_pkg.agent import answer
+
+        return answer(agent_input["query"], system_prompt=prompt)
+```
+
+```toml
+# ~/.nengok/config.toml
+[nengok]
+project_identifier = "my-agent"
+agent_runner = "my_pkg.runner:MyAgent"
+baseline_prompt_path = "my_pkg/prompts/system.md"
+```
+
+Then `nengok doctor` confirms the runner imports and the protocol check passes, and `nengok run --project my-agent` cycles against your traces. The bundled `sample_agent/qa_agent/` is a worked example you can copy from.
 
 ## Architecture
 

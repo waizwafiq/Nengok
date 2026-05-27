@@ -42,6 +42,8 @@ from nengok.core.verifier.artifact_writer import ArtifactWriter
 from nengok.core.verifier.gate import VerifierGate
 from nengok.errors import PhoenixTimeoutError
 from nengok.phoenix.client import PhoenixWrapper
+from nengok.runners.agent_runner import register_runner
+from nengok.runners.loader import load_runner
 from nengok.state.store import StateStore
 from nengok.utils.logging import get_logger, run_context
 from nengok.utils.tracing import get_tracer, register_meta_tracer, set_attributes
@@ -57,6 +59,7 @@ class Orchestrator:
     current_stage: str | None = None
 
     def __post_init__(self) -> None:
+        self._ensure_runner_registered()
         self._phoenix = PhoenixWrapper(self.config)
         self._state = StateStore(self.config.state_db_path)
 
@@ -73,6 +76,22 @@ class Orchestrator:
 
         self._gate = VerifierGate(self.config)
         self._artifact_writer = ArtifactWriter(self.config.artifacts_dir, redactor=self._redactor)
+
+    def _ensure_runner_registered(self) -> None:
+        """
+        Load the config-driven runner and bind it to the active project id.
+
+        When ``config.agent_runner`` is unset, the project relies on the
+        imperative :func:`register_runner` API instead and this is a
+        no-op. Failures here surface as :class:`AgentRunnerLoadError`
+        before any Phoenix calls fire, so a typo in the dotted path is
+        caught before the cycle starts.
+        """
+        spec = self.config.agent_runner
+        if not spec:
+            return
+        runner = load_runner(spec, self.config.agent_runner_kwargs)
+        register_runner(self.config.project_identifier, runner)
 
     def run_once(self, *, dry_run: bool = False) -> CycleResult:
         """One full Observer -> Diagnoser -> Fixer -> Verifier pass."""

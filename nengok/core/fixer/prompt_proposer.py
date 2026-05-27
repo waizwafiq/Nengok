@@ -15,13 +15,16 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.fixer.loaders import (
+    BaselinePromptLoader,
+    load_baseline_prompt_loader,
+)
 from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
 from nengok.errors import BaselinePromptError, MissingApiKeyError
@@ -31,10 +34,6 @@ from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-SAMPLE_AGENT_PROJECT = "travel-planner-agent"
-SAMPLE_AGENT_PROMPT_PATH = (
-    Path(__file__).resolve().parents[3] / "sample_agent" / "prompts" / "travel_planner.md"
-)
 MAX_PROPOSER_EXEMPLARS = 3
 
 GeminiTextCall = Callable[[str], str]
@@ -55,6 +54,7 @@ class PromptProposer:
     gemini_call: GeminiTextCall | None = None
     cost_tracker: CostTracker | None = None
     redactor: Redactor | None = None
+    baseline_loader: BaselinePromptLoader | None = None
 
     def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
         """
@@ -76,22 +76,21 @@ class PromptProposer:
 
     def load_baseline_prompt(self) -> str:
         """
-        Resolve the agent's current prompt, in this precedence:
+        Resolve the agent's current prompt via the configured loader.
 
-          1. Bundled file for the sample agent.
-          2. Phoenix prompt management lookup by project identifier.
-          3. ``config.baseline_prompt_path`` fallback.
+        The default loader walks the bundled sample-agent file, then
+        Phoenix prompt management, then ``config.baseline_prompt_path``.
+        Users override ``config.baseline_prompt_loader`` to plug in
+        their own source.
         """
-        if self.config.project_identifier == SAMPLE_AGENT_PROJECT:
-            return SAMPLE_AGENT_PROMPT_PATH.read_text(encoding="utf-8")
-
-        if self.phoenix is not None:
-            remote = self.phoenix.get_prompt_version(name=self.config.project_identifier)
-            if remote is not None:
-                return remote
-
-        if self.config.baseline_prompt_path is not None:
-            return self.config.baseline_prompt_path.read_text(encoding="utf-8")
+        loader = self.baseline_loader or load_baseline_prompt_loader(
+            self.config.baseline_prompt_loader,
+            config=self.config,
+            phoenix=self.phoenix,
+        )
+        resolved = loader.load(self.config.project_identifier)
+        if resolved:
+            return resolved
 
         raise BaselinePromptError(
             f"No baseline prompt resolved for project "

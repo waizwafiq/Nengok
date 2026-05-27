@@ -192,18 +192,32 @@ If you would rather start from a documented template and edit by hand instead of
 
 Before the Observer fires, `nengok run` performs an MCP preflight against the configured Phoenix project. If `npx` is on PATH, the check spawns `@arizeai/phoenix-mcp@4.0.13`, calls `list_projects`, and prints a `Heads up: Phoenix project '...' was not found via MCP` line on stderr when the project is missing. The cycle still runs (the warning is best-effort), but the message tells you up front why the Observer is about to return zero spans. Pass `--skip-preflight` to suppress the check; set `NENGOK_MCP_ENABLED=0` to disable it for every run. If `npx` is missing, the preflight downgrades to a debug log and is a no-op.
 
-For projects other than the bundled `travel-planner-agent`, register an agent runner before invoking `nengok run`:
+For projects other than the bundled `travel-planner-agent`, the canonical path is to define a class that satisfies the `AgentRunner` Protocol from `nengok.runners.protocol` and point the config at it:
 
 ```python
-from nengok.runners import register_runner
+# my_pkg/runner.py
+from typing import Any
 
-def my_runner(input_row: dict, prompt: str) -> dict:
-    ...
 
-register_runner("my-phoenix-project", my_runner)
+class MyAgent:
+    @property
+    def name(self) -> str:
+        return "my-agent"
+
+    def run(self, agent_input: dict[str, Any], prompt: str) -> dict[str, Any]:
+        from my_pkg.agent import answer
+
+        return answer(agent_input["query"], system_prompt=prompt)
 ```
 
-The runner is what the Phoenix experiment task calls per dataset row, with the candidate prompt injected so a fix can be A/B'd against the baseline. Without a runner, `run_experiment` raises `RuntimeError: No agent runner registered for project ...`.
+```toml
+# ~/.nengok/config.toml
+agent_runner = "my_pkg.runner:MyAgent"
+```
+
+`nengok run` calls the runner once per dataset row with the candidate prompt injected, so a fix can be A/B'd against the baseline. If the dotted path is wrong or the class is missing `run` / `name`, the orchestrator raises `AgentRunnerLoadError` before the first Phoenix call. Imperative registration via `nengok.runners.register_runner("my-project", callable)` still works for bootstrap modules that prefer it. The longer walk-through lives in [docs/extending.md](../docs/extending.md).
+
+The Fixer's baseline-prompt lookup is also pluggable. The default loader walks the bundled sample-agent file, then Phoenix prompt management, then `config.baseline_prompt_path`. Teams that keep their prompt elsewhere set `baseline_prompt_loader = "my_pkg.loaders:build"` in TOML and ship a factory that returns any object implementing `load(project_name: str) -> str | None`. The three reusable building blocks (`FileLoader`, `PhoenixPromptLoader`, `CompositeLoader`) live in [nengok/core/fixer/loaders.py](../nengok/core/fixer/loaders.py).
 
 After a successful cycle Phoenix will hold two projects: your monitored project plus `nengok-meta-agent`, which stores the four-span trace per cycle (`nengok.cycle` -> `observer` / `diagnoser` / `fixer` / `verifier`) the orchestrator emits via `nengok.utils.tracing`. The meta-tracer needs `arize-phoenix-otel` (already in the `phoenix` extra). When the extra is missing, the spans silently drop and the loop runs as before.
 
@@ -301,7 +315,7 @@ When you add a new stage that ships span text outward, accept an optional `redac
 
 ### Tests that need an optional extra
 
-SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12, so we catch the case where core SDK code accidentally requires an optional dependency. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
+SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12 across `ubuntu-latest` and `windows-latest` (four shards), so we catch the case where core SDK code accidentally requires an optional dependency or breaks on a different filesystem. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
 
 A test file that imports `google.genai`, `phoenix.client.*`, or any other module from an optional extra at module top breaks collection in the minimal-deps job. Guard the import with `pytest.importorskip` so the test skips cleanly there and runs for real in the full-extras job:
 
@@ -319,6 +333,22 @@ from nengok.utils.gemini import call_gemini
 The `tests/**` per-file ignore in `pyproject.toml` allows imports below an `importorskip` call (otherwise ruff E402 would fire). Outside `tests/`, imports stay at the top. The relaxation is test-only and is the project's one structural exception to the no-suppressions rule above.
 
 The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments"` before pytest, so if either extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
+
+### Security and packaging gates
+
+SDK CI runs three more jobs that gate the production wheel:
+
+`bandit` scans `nengok/` against the config in `[tool.bandit]` (in `pyproject.toml`). The config skips three rule classes with documented rationale: `B101` (asserts used for type narrowing, since `-O` is not a supported deployment path), `B105` (string literals that match `*_token` are env-var names, not credentials), and `B310` (urlopen targets are operator-supplied URLs parsed at config-load). `tests/` and `phoenix_harness/` get a separate scan with `--skip B101,B104,B106,B108` for legitimate test patterns. Adding a new assert, urlopen, or `*_token` literal in production code is fine; bandit will not flag it. Adding a real secret to source is not fine. Keep credentials in env vars and the config TOML.
+
+`pip-audit` gates the dependency tree against known CVEs. The CI job uninstalls the editable nengok install before auditing, then runs `pip-audit` with no flags. pip-audit treats the editable skip as a fatal log on Linux runners, so removing nengok from the active environment is the only portable way to keep the gate honest about dependency CVEs without false failures on the unpublished package itself. If a transitive dependency picks up a CVE, bump the offending package in `pyproject.toml` rather than suppressing.
+
+`smoke-install` builds the wheel via `python -m build`, installs it in a clean venv, and runs `nengok --version` plus `nengok init --help`. This catches packaging regressions the editable install hides, such as a missing `[project.scripts]` entry or a forgotten data file in the hatch include list.
+
+### Frontend tests
+
+`frontend/` has a Vitest + React Testing Library suite under `frontend/src/pages/__tests__/`. Page tests render through the `renderWithProviders` helper in [frontend/src/test/renderWithProviders.tsx](../frontend/src/test/renderWithProviders.tsx), which wraps the component in a fresh `QueryClient`, a `MemoryRouter`, and the `LayoutProvider`. API modules under `frontend/src/api/` are mocked with `vi.spyOn(...)` so tests never hit a backend.
+
+Run them with `npm test` (one-shot) or `npm run test:watch`. Frontend CI runs the same `npm test` command in a separate `Vitest` job alongside the existing lint and build jobs.
 
 ## Phoenix API Cheatsheet
 

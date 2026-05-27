@@ -12,9 +12,9 @@ import pytest
 from pydantic import ValidationError
 
 from nengok.config import NengokConfig
+from nengok.core.fixer.loaders import SAMPLE_AGENT_PROJECT
 from nengok.core.fixer.prompt_proposer import (
     MAX_PROPOSER_EXEMPLARS,
-    SAMPLE_AGENT_PROJECT,
     PromptProposer,
 )
 from nengok.core.types import (
