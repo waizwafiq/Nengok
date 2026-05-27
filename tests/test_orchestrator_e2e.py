@@ -287,9 +287,7 @@ def test_happy_path_with_real_stages(tmp_path: Path, patched_tracer: _NullTracer
     assert (cluster.cluster_id, ClusterStatus.FIX_PROPOSED) in state.statuses
 
 
-def test_gemini_auth_error_propagates_from_hypothesizer(
-    tmp_path: Path, patched_tracer: _NullTracer
-) -> None:
+def test_gemini_auth_error_propagates_from_hypothesizer(tmp_path: Path, patched_tracer: _NullTracer) -> None:
     del patched_tracer
     cluster = _make_cluster("c-1")
     orch, _, _ = _build_orchestrator(
@@ -302,9 +300,7 @@ def test_gemini_auth_error_propagates_from_hypothesizer(
         orch.run_once()
 
 
-def test_gemini_quota_error_propagates_from_hypothesizer(
-    tmp_path: Path, patched_tracer: _NullTracer
-) -> None:
+def test_gemini_quota_error_propagates_from_hypothesizer(tmp_path: Path, patched_tracer: _NullTracer) -> None:
     del patched_tracer
     cluster = _make_cluster("c-1")
     orch, _, _ = _build_orchestrator(
@@ -332,9 +328,7 @@ def test_invalid_model_error_propagates_from_hypothesizer(
         orch.run_once()
 
 
-def test_gemini_error_in_test_generator_propagates(
-    tmp_path: Path, patched_tracer: _NullTracer
-) -> None:
+def test_gemini_error_in_test_generator_propagates(tmp_path: Path, patched_tracer: _NullTracer) -> None:
     del patched_tracer
     cluster = _make_cluster("c-1")
     orch, _, _ = _build_orchestrator(

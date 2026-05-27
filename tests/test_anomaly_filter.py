@@ -46,9 +46,7 @@ def test_missing_output_is_flagged() -> None:
 
 
 def test_low_eval_score_via_annotation_dict_is_flagged() -> None:
-    out = AnomalyFilter().filter(
-        [_span(annotations={"hallucination": {"score": 0.2, "label": "fail"}})]
-    )
+    out = AnomalyFilter().filter([_span(annotations={"hallucination": {"score": 0.2, "label": "fail"}})])
     assert AnomalySignal.LOW_EVAL_SCORE in out[0].signals
 
 
@@ -58,9 +56,7 @@ def test_low_eval_score_via_plain_float_annotation_is_flagged() -> None:
 
 
 def test_passing_eval_score_does_not_flag() -> None:
-    out = AnomalyFilter().filter(
-        [_span(annotations={"hallucination": {"score": 0.95}, "helpfulness": 0.9})]
-    )
+    out = AnomalyFilter().filter([_span(annotations={"hallucination": {"score": 0.95}, "helpfulness": 0.9})])
     assert out == []
 
 
@@ -90,9 +86,7 @@ def test_every_anomaly_signal_is_reachable_from_the_filter() -> None:
     fired.update(AnomalyFilter().filter([_span(latency_ms=999_999.0)])[0].signals)
     fired.update(AnomalyFilter().filter([_span(output_value="")])[0].signals)
     fired.update(AnomalyFilter().filter([_span(annotations={"x": 0.1})])[0].signals)
-    fired.update(
-        AnomalyFilter().filter([_span(span_kind="TOOL", status_code="ERROR_TOOL")])[0].signals
-    )
+    fired.update(AnomalyFilter().filter([_span(span_kind="TOOL", status_code="ERROR_TOOL")])[0].signals)
 
     assert fired == set(AnomalySignal)
 
