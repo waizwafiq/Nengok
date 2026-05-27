@@ -159,7 +159,7 @@ def test_escalated_decision_promotes_cluster_status(tmp_path: Path) -> None:
 def test_get_reviewer_falls_back_to_anonymous(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(REVIEWER_ENV_VAR, raising=False)
     monkeypatch.setattr(
-        "nengok.server.routes.approvals.REVIEWER_FILE_PATH",
+        "nengok.reviewer.REVIEWER_FILE_PATH",
         tmp_path / "no-reviewer.txt",
     )
     config = _config(tmp_path)
@@ -170,20 +170,20 @@ def test_get_reviewer_falls_back_to_anonymous(tmp_path: Path, monkeypatch: pytes
     assert body == {"reviewer": ANONYMOUS_REVIEWER, "source": "fallback"}
 
 
-def test_resolve_reviewer_prefers_env_then_file_then_anonymous(
+def test_resolve_reviewer_prefers_file_then_env_then_anonymous(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     file_path = tmp_path / "reviewer.txt"
-    monkeypatch.setattr("nengok.server.routes.approvals.REVIEWER_FILE_PATH", file_path)
+    monkeypatch.setattr("nengok.reviewer.REVIEWER_FILE_PATH", file_path)
     monkeypatch.delenv(REVIEWER_ENV_VAR, raising=False)
 
     assert resolve_reviewer(None) == (ANONYMOUS_REVIEWER, "fallback")
 
-    file_path.write_text(" charlie\n", encoding="utf-8")
-    assert resolve_reviewer(None) == ("charlie", "file")
-
     monkeypatch.setenv(REVIEWER_ENV_VAR, "  alice  ")
     assert resolve_reviewer(None) == ("alice", "env")
+
+    file_path.write_text(" charlie\n", encoding="utf-8")
+    assert resolve_reviewer(None) == ("charlie", "file")
 
     assert resolve_reviewer(" bob ") == ("bob", "request")
 
@@ -193,7 +193,7 @@ def test_anonymous_path_records_when_no_identity_configured(
 ) -> None:
     monkeypatch.delenv(REVIEWER_ENV_VAR, raising=False)
     monkeypatch.setattr(
-        "nengok.server.routes.approvals.REVIEWER_FILE_PATH",
+        "nengok.reviewer.REVIEWER_FILE_PATH",
         tmp_path / "no-reviewer.txt",
     )
     config = _config(tmp_path)

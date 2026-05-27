@@ -74,6 +74,14 @@ db_app = typer.Typer(
 )
 app.add_typer(db_app, name="db")
 
+reviewer_app = typer.Typer(
+    name="reviewer",
+    help="Manage the reviewer identity used on approvals.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(reviewer_app, name="reviewer")
+
 logger = get_logger(__name__)
 
 
@@ -939,6 +947,43 @@ def db_check() -> None:
     for migration in drifted:
         typer.echo(f"  {migration.filename} (now sha256 {migration.checksum[:12]})", err=True)
     raise typer.Exit(code=1)
+
+
+@reviewer_app.command("set")
+def reviewer_set(
+    name: Annotated[str, typer.Argument(help="Reviewer display name. Recorded against every approval.")],
+    email: Annotated[
+        str | None,
+        typer.Option("--email", help="Optional email. Stored as 'Name <email>' for the audit log."),
+    ] = None,
+) -> None:
+    """Persist the reviewer identity to `~/.nengok/reviewer.txt`."""
+    from nengok.reviewer import format_identity, write_identity
+
+    try:
+        identity = format_identity(name, email)
+    except ValueError as exc:
+        raise _abort(str(exc)) from exc
+
+    target = write_identity(identity)
+    typer.echo(f"Wrote reviewer identity to {target}.")
+    typer.echo(f"Approvals will record `{identity}` until you change it.")
+
+
+@reviewer_app.command("show")
+def reviewer_show() -> None:
+    """Print the resolved reviewer identity and where it came from."""
+    from nengok.reviewer import REVIEWER_ENV_VAR, REVIEWER_FILE_PATH, resolve_reviewer
+
+    identity, source = resolve_reviewer(None)
+    typer.echo(f"reviewer: {identity}")
+    typer.echo(f"source:   {source}")
+    if source == "fallback":
+        typer.echo("")
+        typer.echo('No identity configured. Run `nengok reviewer set "Your Name" --email you@example.com`')
+        typer.echo(f"or export {REVIEWER_ENV_VAR}=... to label approvals.")
+    elif source == "file":
+        typer.echo(f"file:     {REVIEWER_FILE_PATH}")
 
 
 if __name__ == "__main__":  # pragma: no cover

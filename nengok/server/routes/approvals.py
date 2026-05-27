@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from nengok.core.types import ClusterStatus
+from nengok.reviewer import (
+    ANONYMOUS_REVIEWER,
+    REVIEWER_ENV_VAR,
+    REVIEWER_FILE_PATH,
+    resolve_reviewer,
+)
 from nengok.server.dependencies import StoreDep
 
 router = APIRouter(tags=["approvals"])
@@ -26,30 +30,13 @@ _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
 }
 
 
-REVIEWER_ENV_VAR = "NENGOK_REVIEWER"
-REVIEWER_FILE_PATH = Path.home() / ".nengok" / "reviewer.txt"
-ANONYMOUS_REVIEWER = "anonymous"
-
-
-def resolve_reviewer(provided: str | None) -> tuple[str, str]:
-    """
-    Return the reviewer string to record plus its provenance.
-
-    Order: explicit body field, then `NENGOK_REVIEWER`, then
-    `~/.nengok/reviewer.txt`, then the literal "anonymous".
-    """
-    if provided:
-        trimmed = provided.strip()
-        if trimmed:
-            return trimmed, "request"
-    env_value = os.environ.get(REVIEWER_ENV_VAR, "").strip()
-    if env_value:
-        return env_value, "env"
-    if REVIEWER_FILE_PATH.is_file():
-        file_value = REVIEWER_FILE_PATH.read_text(encoding="utf-8").strip()
-        if file_value:
-            return file_value, "file"
-    return ANONYMOUS_REVIEWER, "fallback"
+__all__ = [
+    "ANONYMOUS_REVIEWER",
+    "REVIEWER_ENV_VAR",
+    "REVIEWER_FILE_PATH",
+    "resolve_reviewer",
+    "router",
+]
 
 
 class ApprovalCreate(BaseModel):
