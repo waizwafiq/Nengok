@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchCluster } from "../api/clusters";
 import { fetchArtifacts } from "../api/artifacts";
+import { apiClient } from "../api/client";
 import { submitApproval } from "../api/approvals";
+import { ApprovalHistory } from "../components/clusters/ApprovalHistory";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { StatusBadge } from "../components/StatusBadge";
@@ -12,6 +15,16 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import type { ApprovalDecision } from "../types/approval";
+
+interface ReviewerIdentity {
+  reviewer: string;
+  source: "request" | "env" | "file" | "fallback";
+}
+
+async function fetchReviewerIdentity(): Promise<ReviewerIdentity> {
+  const response = await apiClient.get<ReviewerIdentity>("/reviewer");
+  return response.data;
+}
 
 export function ClusterDetailPage() {
   const { clusterId = "" } = useParams<{ clusterId: string }>();
@@ -36,12 +49,28 @@ export function ClusterDetailPage() {
     retry: false,
   });
 
+  const reviewer = useQuery({
+    queryKey: ["reviewer"],
+    queryFn: fetchReviewerIdentity,
+  });
+
+  const [reason, setReason] = useState("");
+
   const decide = useMutation({
-    mutationFn: (decision: ApprovalDecision) => submitApproval(clusterId, decision),
+    mutationFn: (decision: ApprovalDecision) =>
+      submitApproval(clusterId, {
+        decision,
+        reviewer: reviewer.data?.source === "fallback" ? null : reviewer.data?.reviewer ?? null,
+        reason: reason.trim() || null,
+      }),
     onSuccess: () => {
+      setReason("");
       queryClient.invalidateQueries({ queryKey: ["clusters"] });
+      queryClient.invalidateQueries({ queryKey: ["approvals", clusterId] });
     },
   });
+
+  const reviewerIsAnonymous = reviewer.data?.source === "fallback";
 
   if (cluster.isLoading) {
     return <ClusterDetailSkeleton />;
@@ -120,34 +149,65 @@ export function ClusterDetailPage() {
         </div>
 
         <Card>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-3">
             <div>
               <h2 className="section-label">Approval</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 Approve ships the fix to the artifacts directory. Reject flags it for review.
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={() => decide.mutate("approved")} disabled={decide.isPending}>
-                Approve
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => decide.mutate("rejected")}
-                disabled={decide.isPending}
-              >
-                Reject
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => decide.mutate("dismissed")}
-                disabled={decide.isPending}
-              >
-                Dismiss
-              </Button>
+            <div className="space-y-1">
+              <label htmlFor="approval-reason" className="text-xs font-medium text-foreground">
+                Reason (optional)
+              </label>
+              <textarea
+                id="approval-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Why does this fix ship (or not)?"
+                rows={2}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Recording as <span className="font-mono">{reviewer.data?.reviewer ?? "..."}</span>
+                {reviewerIsAnonymous ? (
+                  <>
+                    {" — "}
+                    <span className="text-status-escalated">
+                      no reviewer identity configured (set NENGOK_REVIEWER or ~/.nengok/reviewer.txt)
+                    </span>
+                  </>
+                ) : null}
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={() => decide.mutate("approved")} disabled={decide.isPending}>
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => decide.mutate("rejected")}
+                  disabled={decide.isPending}
+                >
+                  Reject
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => decide.mutate("dismissed")}
+                  disabled={decide.isPending}
+                >
+                  Dismiss
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
+
+        <div className="space-y-3">
+          <h2 className="section-label">Approval history</h2>
+          <ApprovalHistory clusterId={clusterId} />
+        </div>
       </section>
     </div>
   );

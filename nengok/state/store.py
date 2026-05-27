@@ -146,19 +146,59 @@ class StateStore:
         return [dict(row) for row in rows]
 
     def record_approval(
-        self, *, cluster_id: str, decision: str, decided_by: str | None, notes: str | None
+        self, *, cluster_id: str, decision: str, reviewer: str | None, reason: str | None
     ) -> str:
         approval_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO approvals (approval_id, cluster_id, decision, decided_by, decided_at, notes)
+                INSERT INTO approvals (approval_id, cluster_id, decision, reviewer, created_at, reason)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (approval_id, cluster_id, decision, decided_by, now, notes),
+                (approval_id, cluster_id, decision, reviewer, now, reason),
             )
         return approval_id
+
+    def list_approvals(self, *, limit: int = 50, before: str | None = None) -> list[dict]:
+        """
+        Return approvals across all clusters, newest first.
+
+        `before` is a cursor: the `approval_id` returned at the end of
+        the previous page. Pagination is keyset-style (created_at DESC,
+        approval_id DESC) so concurrent inserts cannot duplicate or
+        drop rows between requests.
+        """
+        sql = """
+            SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
+            FROM approvals
+        """
+        params: tuple = ()
+        if before is not None:
+            sql += """
+                WHERE (created_at, approval_id) < (
+                    SELECT created_at, approval_id FROM approvals WHERE approval_id = ?
+                )
+            """
+            params = (before,)
+        sql += " ORDER BY created_at DESC, approval_id DESC LIMIT ?"
+        params = (*params, limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_cluster_approvals(self, cluster_id: str) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
+                FROM approvals
+                WHERE cluster_id = ?
+                ORDER BY created_at DESC, approval_id DESC
+                """,
+                (cluster_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def record_cycle_usage(
         self,
@@ -241,7 +281,7 @@ class StateStore:
             mttr_row = conn.execute(
                 """
                 SELECT AVG(
-                    (julianday(a.decided_at) - julianday(c.diagnosed_at)) * 86400.0
+                    (julianday(a.created_at) - julianday(c.diagnosed_at)) * 86400.0
                 ) AS seconds
                 FROM clusters c
                 JOIN approvals a ON a.cluster_id = c.cluster_id

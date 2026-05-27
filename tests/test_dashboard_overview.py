@@ -100,7 +100,7 @@ def test_overview_computes_mttd_and_mttr_in_seconds(tmp_path: Path) -> None:
     cluster = _cluster("c-1", ClusterStatus.DIAGNOSED, created_at=diagnosed)
     store.upsert_cluster(cluster, first_seen=first_seen)
     store.mark_status("c-1", ClusterStatus.APPROVED)
-    store.record_approval(cluster_id="c-1", decision="approved", decided_by=None, notes=None)
+    store.record_approval(cluster_id="c-1", decision="approved", reviewer=None, reason=None)
 
     overview = store.dashboard_overview()
     assert overview["mttd_seconds"] is not None

@@ -229,6 +229,12 @@ Schema for the local SQLite state lives in [nengok/state/migrations/](../nengok/
 
 Three CLI helpers wrap the migrator. `nengok db migrate` applies any pending migrations and is a no-op when the database is up to date. To compare a fresh checkout against a deployed one, `nengok db status` prints every applied version with its short checksum. `nengok db check` re-hashes every migration file and exits 1 if any drifted from its applied checksum, which makes a good gate for CI on the state package.
 
+#### Approval audit log
+
+Every approve, reject, dismiss, or escalate decision is written to the `approvals` table with the reviewer, free-text reason, and a UTC timestamp. The dashboard cluster detail page renders the full history under the approval card; the API exposes `GET /api/v1/clusters/{id}/approvals` for one cluster (newest first) and `GET /api/v1/approvals?limit=50&before=<approval_id>` for a keyset-paginated cross-cluster feed. `POST /api/v1/clusters/{id}/approvals` records a new decision and is what the dashboard talks to; the legacy `POST /api/v1/approvals` body shape (`cluster_id`, `decided_by`, `notes`) still works and routes through the same code path.
+
+Reviewer identity is resolved in this order: the value supplied in the request body, then the `NENGOK_REVIEWER` environment variable, then a single line in `~/.nengok/reviewer.txt`, then the literal `anonymous`. `GET /api/v1/reviewer` returns the resolved name and which of those four sources won, which the dashboard uses to surface a warning when the operator is about to record an action as `anonymous`. Leaving the reason blank is allowed; the textarea is there because most reviewers want a one-liner ("matches the existing prompt phrasing", "ships after Tuesday's release"), not because the gate enforces it.
+
 To inspect the resolved config without leaking keys, run `nengok config show`. Every field whose name matches `api_key`, `token`, `secret`, `password`, or `authorization` renders as `prefix****suffix` (for example `google_api_key = AIza****uvwx`), so the output is safe to drop in a paste buffer or a support ticket. Every Nengok process also writes one INFO line on startup that names the version, the config path actually read, the redactor state, and the Phoenix base URL (`nengok v0.1.0 starting (config: ~/.nengok/config.toml, redaction: enabled, phoenix: https://...)`). Operators can grep for `redaction: disabled` in a log shipper to catch a misconfigured deployment before it ships span text to Gemini in the clear.
 
 ### 7. Launch the dashboard (optional)
