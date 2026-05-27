@@ -100,6 +100,46 @@ describe("OverviewPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("surfaces the recent cycle outcomes and per-cycle spend", async () => {
+    vi.spyOn(dashboardApi, "fetchDashboardOverview").mockResolvedValue(
+      buildOverview({
+        recent_cycles: [
+          {
+            cycle_id: "c-2",
+            started_at: "2026-05-26T15:00:00Z",
+            ended_at: "2026-05-26T15:10:00Z",
+            status: "ok",
+            clusters_processed: 3,
+            clusters_discovered: 3,
+            gemini_tokens: 5_000,
+            gemini_dollars: 0.14,
+            error_message: null,
+          },
+          {
+            cycle_id: "c-1",
+            started_at: "2026-05-25T15:00:00Z",
+            ended_at: "2026-05-25T15:08:00Z",
+            status: "over_budget",
+            clusters_processed: 2,
+            clusters_discovered: 4,
+            gemini_tokens: 8_000,
+            gemini_dollars: 0.22,
+            error_message: null,
+          },
+        ],
+        recent_cycle_status_counts: { ok: 1, over_budget: 1 },
+      }),
+    );
+    vi.spyOn(clustersApi, "fetchClusters").mockResolvedValue([buildCluster()]);
+
+    renderWithProviders(<OverviewPage />);
+
+    expect(await screen.findByText(/Cost of last 2 cycles/)).toBeInTheDocument();
+    expect(screen.getByText(/Cycle outcomes \(last 2\)/)).toBeInTheDocument();
+    expect(screen.getByText("Over budget")).toBeInTheDocument();
+    expect(screen.getByText("$0.14")).toBeInTheDocument();
+  });
+
   it("formats null MTTD/MTTR as an em-dash placeholder", async () => {
     vi.spyOn(dashboardApi, "fetchDashboardOverview").mockResolvedValue(
       buildOverview({ mttd_seconds: null, mttr_seconds: null, fix_pass_rate_30d: null }),

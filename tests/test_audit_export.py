@@ -19,6 +19,8 @@ from nengok.config import NengokConfig
 from nengok.core.types import (
     Cluster,
     ClusterStatus,
+    CycleRecord,
+    CycleStatus,
     ExperimentResult,
     RootCauseHypothesis,
 )
@@ -148,12 +150,15 @@ def _experiment(
 
 
 def _cycle(store: StateStore, cycle_id: str, *, started_at: datetime) -> None:
-    store.record_cycle_usage(
-        cycle_id=cycle_id,
-        started_at=started_at,
-        ended_at=started_at,
-        gemini_tokens=100,
-        gemini_dollars=0.5,
+    store.record_cycle(
+        CycleRecord(
+            cycle_id=cycle_id,
+            started_at=started_at,
+            ended_at=started_at,
+            status=CycleStatus.OK,
+            gemini_tokens=100,
+            gemini_dollars=0.5,
+        )
     )
 
 

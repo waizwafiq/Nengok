@@ -34,7 +34,9 @@ from nengok.core.types import (
     AnomalousSpan,
     Cluster,
     ClusterStatus,
+    CycleRecord,
     CycleResult,
+    CycleStatus,
     FixArtifact,
     VerificationOutcome,
 )
@@ -104,190 +106,218 @@ class Orchestrator:
         cost_tracker = self._fresh_cost_tracker()
         self._attach_cost_tracker(cost_tracker)
 
-        with (
-            run_context(run_id=run_id),
-            tracer.start_as_current_span("nengok.cycle") as cycle_span,
-        ):
-            logger.info(
-                "Cycle start (project=%s, dry_run=%s)",
-                self.config.project_identifier,
-                dry_run,
-            )
-            set_attributes(
-                cycle_span,
-                {
-                    "nengok.project": self.config.project_identifier,
-                    "nengok.dry_run": dry_run,
-                },
-            )
+        cycle_status = CycleStatus.OK
+        clusters_discovered = 0
+        clusters_processed = 0
 
+        try:
             with (
-                run_context(stage="observer"),
-                tracer.start_as_current_span("observer") as observer_span,
+                run_context(run_id=run_id),
+                tracer.start_as_current_span("nengok.cycle") as cycle_span,
             ):
-                self.current_stage = "observer"
-                spans = self._sampler.sample()
-                anomalies = self._anomaly_filter.filter(spans)
-                new_anomalies = self._state.deduplicate(anomalies)
+                logger.info(
+                    "Cycle start (project=%s, dry_run=%s)",
+                    self.config.project_identifier,
+                    dry_run,
+                )
                 set_attributes(
-                    observer_span,
+                    cycle_span,
                     {
-                        "nengok.observer.span_count": len(spans),
-                        "nengok.observer.anomaly_count": len(anomalies),
-                        "nengok.observer.new_anomaly_count": len(new_anomalies),
+                        "nengok.project": self.config.project_identifier,
+                        "nengok.dry_run": dry_run,
+                    },
+                )
+
+                with (
+                    run_context(stage="observer"),
+                    tracer.start_as_current_span("observer") as observer_span,
+                ):
+                    self.current_stage = "observer"
+                    spans = self._sampler.sample()
+                    anomalies = self._anomaly_filter.filter(spans)
+                    new_anomalies = self._state.deduplicate(anomalies)
+                    set_attributes(
+                        observer_span,
+                        {
+                            "nengok.observer.span_count": len(spans),
+                            "nengok.observer.anomaly_count": len(anomalies),
+                            "nengok.observer.new_anomaly_count": len(new_anomalies),
+                        },
+                    )
+                    logger.info(
+                        "Observer: %d spans -> %d anomalies -> %d new after dedup",
+                        len(spans),
+                        len(anomalies),
+                        len(new_anomalies),
+                    )
+
+                if not new_anomalies:
+                    self._persist_cycle(
+                        cycle_id=run_id,
+                        started_at=started_at,
+                        ended_at=datetime.now(UTC),
+                        status=CycleStatus.OK,
+                        clusters_processed=0,
+                        clusters_discovered=0,
+                        cost_tracker=cost_tracker,
+                    )
+                    return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
+
+                baseline_prompt = self._prompt_proposer.load_baseline_prompt()
+
+                with (
+                    run_context(stage="diagnoser"),
+                    tracer.start_as_current_span("diagnoser") as diagnoser_span,
+                ):
+                    self.current_stage = "diagnoser"
+                    raw_clusters = self._clusterer.cluster(new_anomalies)
+                    clusters: list[Cluster] = []
+                    for raw in raw_clusters:
+                        hypothesis = self._hypothesizer.hypothesize(raw, current_prompt=baseline_prompt)
+                        clusters.append(
+                            raw.model_copy(
+                                update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED}
+                            )
+                        )
+                        self._state.upsert_cluster(
+                            clusters[-1],
+                            first_seen=_earliest_span_time(clusters[-1], new_anomalies),
+                        )
+                    set_attributes(diagnoser_span, {"nengok.diagnoser.cluster_count": len(clusters)})
+                    logger.info("Diagnoser: %d clusters with hypotheses", len(clusters))
+
+                clusters_discovered = len(clusters)
+                signal_counts = _signal_counts_by_cluster(clusters, new_anomalies)
+
+                artifacts: list[FixArtifact] = []
+                escalations = 0
+
+                for index, cluster in enumerate(clusters):
+                    assert cluster.hypothesis is not None
+
+                    if self._is_over_budget(cost_tracker):
+                        cycle_status = CycleStatus.OVER_BUDGET
+                        skipped = [c.cluster_id for c in clusters[index:]]
+                        self._record_over_budget(
+                            cost_tracker=cost_tracker,
+                            skipped_cluster_ids=skipped,
+                        )
+                        break
+
+                    cluster_attrs = _cluster_span_attrs(cluster, signal_counts)
+
+                    try:
+                        with (
+                            run_context(stage="fixer", cluster_id=cluster.cluster_id),
+                            tracer.start_as_current_span("fixer") as fixer_span,
+                        ):
+                            self.current_stage = "fixer"
+                            set_attributes(fixer_span, cluster_attrs)
+                            cases = self._test_generator.generate(cluster)
+                            proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
+                            set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
+
+                            if dry_run:
+                                logger.info("Dry run: skipping experiment for cluster '%s'", cluster.name)
+                                clusters_processed += 1
+                                continue
+
+                            result = self._experiment_runner.run(
+                                cluster=cluster, cases=cases, proposal=proposal
+                            )
+                            self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
+
+                        with (
+                            run_context(stage="verifier", cluster_id=cluster.cluster_id),
+                            tracer.start_as_current_span("verifier") as verifier_span,
+                        ):
+                            self.current_stage = "verifier"
+                            set_attributes(verifier_span, cluster_attrs)
+                            verification = self._gate.evaluate(result)
+                            set_attributes(
+                                verifier_span,
+                                {"nengok.verifier.outcome": verification.outcome.value},
+                            )
+
+                            if verification.outcome is VerificationOutcome.PASSED:
+                                artifact = self._artifact_writer.write(
+                                    cluster=cluster,
+                                    cases=cases,
+                                    proposal=proposal,
+                                    verification=verification,
+                                )
+                                artifacts.append(artifact)
+                                self._state.mark_status(cluster.cluster_id, ClusterStatus.FIX_PROPOSED)
+                            else:
+                                escalations += 1
+                                self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
+                                logger.warning(
+                                    "Cluster '%s' escalated: %s",
+                                    cluster.name,
+                                    verification.outcome.value,
+                                )
+                        clusters_processed += 1
+                    except PhoenixTimeoutError as exc:
+                        escalations += 1
+                        clusters_processed += 1
+                        self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
+                        self._record_phoenix_timeout(cluster=cluster, exc=exc)
+                        logger.warning(
+                            "Cluster '%s' escalated: phoenix_timeout (%s, %.1fs)",
+                            cluster.name,
+                            exc.method,
+                            exc.timeout_seconds,
+                        )
+
+                finished_at = datetime.now(UTC)
+                set_attributes(
+                    cycle_span,
+                    {
+                        "nengok.cycle.clusters_detected": len(clusters),
+                        "nengok.cycle.fixes_proposed": len(artifacts),
+                        "nengok.cycle.escalations": escalations,
+                        "nengok.cycle.duration_s": (finished_at - started_at).total_seconds(),
+                        "nengok.cycle.gemini_tokens": cost_tracker.tokens_used,
+                        "nengok.cycle.gemini_dollars": cost_tracker.dollars_used,
+                        "nengok.cycle.over_budget": cycle_status is CycleStatus.OVER_BUDGET,
                     },
                 )
                 logger.info(
-                    "Observer: %d spans -> %d anomalies -> %d new after dedup",
-                    len(spans),
-                    len(anomalies),
-                    len(new_anomalies),
+                    "Cycle complete in %.1fs (tokens=%d, $=%.4f, status=%s)",
+                    (finished_at - started_at).total_seconds(),
+                    cost_tracker.tokens_used,
+                    cost_tracker.dollars_used,
+                    cycle_status.value,
                 )
 
-            if not new_anomalies:
-                self._state.record_cycle_usage(
+                self._persist_cycle(
                     cycle_id=run_id,
                     started_at=started_at,
-                    ended_at=datetime.now(UTC),
-                    gemini_tokens=cost_tracker.tokens_used,
-                    gemini_dollars=cost_tracker.dollars_used,
+                    ended_at=finished_at,
+                    status=cycle_status,
+                    clusters_processed=clusters_processed,
+                    clusters_discovered=clusters_discovered,
+                    cost_tracker=cost_tracker,
                 )
-                return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
 
-            baseline_prompt = self._prompt_proposer.load_baseline_prompt()
-
-            with (
-                run_context(stage="diagnoser"),
-                tracer.start_as_current_span("diagnoser") as diagnoser_span,
-            ):
-                self.current_stage = "diagnoser"
-                raw_clusters = self._clusterer.cluster(new_anomalies)
-                clusters: list[Cluster] = []
-                for raw in raw_clusters:
-                    hypothesis = self._hypothesizer.hypothesize(raw, current_prompt=baseline_prompt)
-                    clusters.append(
-                        raw.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
-                    )
-                    self._state.upsert_cluster(
-                        clusters[-1],
-                        first_seen=_earliest_span_time(clusters[-1], new_anomalies),
-                    )
-                set_attributes(diagnoser_span, {"nengok.diagnoser.cluster_count": len(clusters)})
-                logger.info("Diagnoser: %d clusters with hypotheses", len(clusters))
-
-            signal_counts = _signal_counts_by_cluster(clusters, new_anomalies)
-
-            artifacts: list[FixArtifact] = []
-            escalations = 0
-            over_budget = False
-
-            for index, cluster in enumerate(clusters):
-                assert cluster.hypothesis is not None
-
-                if self._is_over_budget(cost_tracker):
-                    over_budget = True
-                    skipped = [c.cluster_id for c in clusters[index:]]
-                    self._record_over_budget(
-                        cost_tracker=cost_tracker,
-                        skipped_cluster_ids=skipped,
-                    )
-                    break
-
-                cluster_attrs = _cluster_span_attrs(cluster, signal_counts)
-
-                try:
-                    with (
-                        run_context(stage="fixer", cluster_id=cluster.cluster_id),
-                        tracer.start_as_current_span("fixer") as fixer_span,
-                    ):
-                        self.current_stage = "fixer"
-                        set_attributes(fixer_span, cluster_attrs)
-                        cases = self._test_generator.generate(cluster)
-                        proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
-                        set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
-
-                        if dry_run:
-                            logger.info("Dry run: skipping experiment for cluster '%s'", cluster.name)
-                            continue
-
-                        result = self._experiment_runner.run(cluster=cluster, cases=cases, proposal=proposal)
-                        self._state.record_experiment(cluster_id=cluster.cluster_id, result=result)
-
-                    with (
-                        run_context(stage="verifier", cluster_id=cluster.cluster_id),
-                        tracer.start_as_current_span("verifier") as verifier_span,
-                    ):
-                        self.current_stage = "verifier"
-                        set_attributes(verifier_span, cluster_attrs)
-                        verification = self._gate.evaluate(result)
-                        set_attributes(
-                            verifier_span,
-                            {"nengok.verifier.outcome": verification.outcome.value},
-                        )
-
-                        if verification.outcome is VerificationOutcome.PASSED:
-                            artifact = self._artifact_writer.write(
-                                cluster=cluster,
-                                cases=cases,
-                                proposal=proposal,
-                                verification=verification,
-                            )
-                            artifacts.append(artifact)
-                            self._state.mark_status(cluster.cluster_id, ClusterStatus.FIX_PROPOSED)
-                        else:
-                            escalations += 1
-                            self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
-                            logger.warning(
-                                "Cluster '%s' escalated: %s",
-                                cluster.name,
-                                verification.outcome.value,
-                            )
-                except PhoenixTimeoutError as exc:
-                    escalations += 1
-                    self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
-                    self._record_phoenix_timeout(cluster=cluster, exc=exc)
-                    logger.warning(
-                        "Cluster '%s' escalated: phoenix_timeout (%s, %.1fs)",
-                        cluster.name,
-                        exc.method,
-                        exc.timeout_seconds,
-                    )
-
-            finished_at = datetime.now(UTC)
-            set_attributes(
-                cycle_span,
-                {
-                    "nengok.cycle.clusters_detected": len(clusters),
-                    "nengok.cycle.fixes_proposed": len(artifacts),
-                    "nengok.cycle.escalations": escalations,
-                    "nengok.cycle.duration_s": (finished_at - started_at).total_seconds(),
-                    "nengok.cycle.gemini_tokens": cost_tracker.tokens_used,
-                    "nengok.cycle.gemini_dollars": cost_tracker.dollars_used,
-                    "nengok.cycle.over_budget": over_budget,
-                },
-            )
-            logger.info(
-                "Cycle complete in %.1fs (tokens=%d, $=%.4f, over_budget=%s)",
-                (finished_at - started_at).total_seconds(),
-                cost_tracker.tokens_used,
-                cost_tracker.dollars_used,
-                over_budget,
-            )
-
-            self._state.record_cycle_usage(
+                return CycleResult(
+                    clusters_detected=len(clusters),
+                    fixes_proposed=len(artifacts),
+                    escalations=escalations,
+                    artifacts=artifacts,
+                )
+        except Exception as exc:
+            self._persist_cycle(
                 cycle_id=run_id,
                 started_at=started_at,
-                ended_at=finished_at,
-                gemini_tokens=cost_tracker.tokens_used,
-                gemini_dollars=cost_tracker.dollars_used,
+                ended_at=datetime.now(UTC),
+                status=CycleStatus.FAILED,
+                clusters_processed=clusters_processed,
+                clusters_discovered=clusters_discovered,
+                cost_tracker=cost_tracker,
+                error_message=f"{type(exc).__name__}: {exc}",
             )
-
-            return CycleResult(
-                clusters_detected=len(clusters),
-                fixes_proposed=len(artifacts),
-                escalations=escalations,
-                artifacts=artifacts,
-            )
+            raise
 
     def _ensure_traced(self) -> None:
         """Register the meta-tracer once per process."""
@@ -295,6 +325,32 @@ class Orchestrator:
             return
         register_meta_tracer()
         Orchestrator._traced = True
+
+    def _persist_cycle(
+        self,
+        *,
+        cycle_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+        status: CycleStatus,
+        clusters_processed: int,
+        clusters_discovered: int,
+        cost_tracker: CostTracker,
+        error_message: str | None = None,
+    ) -> None:
+        self._state.record_cycle(
+            CycleRecord(
+                cycle_id=cycle_id,
+                started_at=started_at,
+                ended_at=ended_at,
+                status=status,
+                clusters_processed=clusters_processed,
+                clusters_discovered=clusters_discovered,
+                gemini_tokens=cost_tracker.tokens_used,
+                gemini_dollars=cost_tracker.dollars_used,
+                error_message=error_message,
+            )
+        )
 
     def _fresh_cost_tracker(self) -> CostTracker:
         return CostTracker(
