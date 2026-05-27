@@ -140,27 +140,66 @@ def _apply_atomically(conn: sqlite3.Connection, *, migration: Migration, applied
     """
     Run one migration's DDL plus its `schema_versions` row inside one transaction.
 
-    `executescript` implicitly commits any open transaction first, so an
-    outer `BEGIN` is not enough on its own. We embed `BEGIN`/`COMMIT` in
-    the script and issue an explicit `ROLLBACK` on failure to undo any
-    partial DDL the broken statement may have left behind.
+    `executescript` implicitly commits any open transaction first and
+    forbids parameter binding, so we split the migration body into
+    statements ourselves and drive each through `conn.execute()`. That
+    keeps the schema_versions INSERT parameterized and lets the
+    surrounding explicit `BEGIN`/`COMMIT` cover the whole apply.
     """
-    body = migration.sql.strip()
-    if body.endswith(";"):
-        body = body[:-1]
-    script = (
-        "BEGIN;\n"
-        f"{body};\n"
-        f"INSERT INTO schema_versions (version, applied_at, checksum) "
-        f"VALUES ({migration.version}, '{applied_at}', '{migration.checksum}');\n"
-        "COMMIT;\n"
-    )
+    statements = _split_statements(migration.sql)
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN")
     try:
-        conn.executescript(script)
+        for stmt in statements:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT INTO schema_versions (version, applied_at, checksum) VALUES (?, ?, ?)",
+            (migration.version, applied_at, migration.checksum),
+        )
+        conn.execute("COMMIT")
     except sqlite3.Error:
         with contextlib.suppress(sqlite3.Error):
             conn.execute("ROLLBACK")
         raise
+
+
+_LINE_COMMENT = re.compile(r"--[^\n]*")
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _split_statements(sql: str) -> list[str]:
+    """
+    Split a SQL script into individual statements safe for `conn.execute()`.
+
+    Strips line and block comments, then splits on top-level semicolons
+    that are not inside single- or double-quoted string literals. The
+    inputs are migration files we author, so this does not need to
+    handle every SQL dialect quirk, only the ones our migrations use.
+    """
+    stripped = _BLOCK_COMMENT.sub("", _LINE_COMMENT.sub("", sql))
+    statements: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    for ch in stripped:
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            current.append(ch)
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+            current.append(ch)
+        elif ch == ";" and not in_single and not in_double:
+            piece = "".join(current).strip()
+            if piece:
+                statements.append(piece)
+            current = []
+        else:
+            current.append(ch)
+    tail = "".join(current).strip()
+    if tail:
+        statements.append(tail)
+    return statements
 
 
 def verify_checksums(conn: sqlite3.Connection, migrations: list[Migration]) -> list[Migration]:
