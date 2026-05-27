@@ -460,6 +460,36 @@ class StateStore:
                 """
             ).fetchall()
 
+            recent_cycle_rows = conn.execute(
+                """
+                SELECT cycle_id, started_at, ended_at, status,
+                       clusters_processed, clusters_discovered,
+                       gemini_tokens, gemini_dollars, error_message
+                FROM cycles
+                ORDER BY started_at DESC, cycle_id DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
+        recent_cycles = [
+            {
+                "cycle_id": row["cycle_id"],
+                "started_at": row["started_at"],
+                "ended_at": row["ended_at"],
+                "status": row["status"] or "ok",
+                "clusters_processed": int(row["clusters_processed"] or 0),
+                "clusters_discovered": int(row["clusters_discovered"] or 0),
+                "gemini_tokens": int(row["gemini_tokens"] or 0),
+                "gemini_dollars": float(row["gemini_dollars"] or 0.0),
+                "error_message": row["error_message"],
+            }
+            for row in recent_cycle_rows
+        ]
+        recent_status_counts: dict[str, int] = {}
+        for row in recent_cycle_rows:
+            key = row["status"] or "ok"
+            recent_status_counts[key] = recent_status_counts.get(key, 0) + 1
+
         return {
             "cluster_counts": {
                 "open": open_count,
@@ -485,6 +515,8 @@ class StateStore:
                 }
                 for row in sparkline_rows
             ],
+            "recent_cycles": recent_cycles,
+            "recent_cycle_status_counts": recent_status_counts,
         }
 
     def latest_experiment(self, cluster_id: str) -> dict | None:
