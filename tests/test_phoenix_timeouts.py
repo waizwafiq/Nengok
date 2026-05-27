@@ -133,7 +133,7 @@ class _State:
     def record_experiment(self, **_: Any) -> None:
         return
 
-    def record_cycle_usage(self, **_: Any) -> None:
+    def record_cycle(self, _record: Any) -> None:
         return
 
 

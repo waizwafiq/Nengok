@@ -132,3 +132,30 @@ class CycleResult(BaseModel):
     fixes_proposed: int
     escalations: int
     artifacts: list[FixArtifact] = Field(default_factory=list)
+
+
+class CycleStatus(str, Enum):
+    OK = "ok"
+    OVER_BUDGET = "over_budget"
+    FAILED = "failed"
+    CIRCUIT_BROKEN = "circuit_broken"
+
+
+class CycleRecord(BaseModel):
+    """
+    Per-cycle bookkeeping row persisted by `StateStore.record_cycle`.
+
+    The orchestrator builds one of these at the end of every cycle,
+    success or failure, so the overview dashboard can plot status and
+    spend trends without re-reading the meta-tracer spans.
+    """
+
+    cycle_id: str
+    started_at: datetime
+    ended_at: datetime
+    status: CycleStatus
+    clusters_processed: int = 0
+    clusters_discovered: int = 0
+    gemini_tokens: int = 0
+    gemini_dollars: float = 0.0
+    error_message: str | None = None

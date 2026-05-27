@@ -311,6 +311,10 @@ def _serialize_cycle_row(row: dict) -> dict:
         "ended_at": row["ended_at"],
         "gemini_tokens": int(row.get("gemini_tokens") or 0),
         "gemini_dollars": float(row.get("gemini_dollars") or 0.0),
+        "status": row.get("status") or "ok",
+        "clusters_processed": int(row.get("clusters_processed") or 0),
+        "clusters_discovered": int(row.get("clusters_discovered") or 0),
+        "error_message": row.get("error_message"),
     }
 
 

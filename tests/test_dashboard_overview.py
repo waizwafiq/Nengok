@@ -10,6 +10,8 @@ import pytest
 from nengok.core.types import (
     Cluster,
     ClusterStatus,
+    CycleRecord,
+    CycleStatus,
     ExperimentResult,
     RootCauseHypothesis,
 )
@@ -124,26 +126,35 @@ def test_overview_sums_regression_cases_from_latest_experiment_per_cluster(tmp_p
 def test_overview_aggregates_gemini_spend_and_sparkline(tmp_path: Path) -> None:
     store = StateStore(tmp_path / "state.db")
     now = datetime.now(UTC)
-    store.record_cycle_usage(
-        cycle_id="c-1",
-        started_at=now - timedelta(days=2),
-        ended_at=now - timedelta(days=2),
-        gemini_tokens=4_000,
-        gemini_dollars=0.12,
+    store.record_cycle(
+        CycleRecord(
+            cycle_id="c-1",
+            started_at=now - timedelta(days=2),
+            ended_at=now - timedelta(days=2),
+            status=CycleStatus.OK,
+            gemini_tokens=4_000,
+            gemini_dollars=0.12,
+        )
     )
-    store.record_cycle_usage(
-        cycle_id="c-2",
-        started_at=now - timedelta(days=1),
-        ended_at=now - timedelta(days=1),
-        gemini_tokens=6_000,
-        gemini_dollars=0.18,
+    store.record_cycle(
+        CycleRecord(
+            cycle_id="c-2",
+            started_at=now - timedelta(days=1),
+            ended_at=now - timedelta(days=1),
+            status=CycleStatus.OK,
+            gemini_tokens=6_000,
+            gemini_dollars=0.18,
+        )
     )
-    store.record_cycle_usage(
-        cycle_id="c-3",
-        started_at=now - timedelta(days=1, hours=2),
-        ended_at=now - timedelta(days=1),
-        gemini_tokens=2_000,
-        gemini_dollars=0.05,
+    store.record_cycle(
+        CycleRecord(
+            cycle_id="c-3",
+            started_at=now - timedelta(days=1, hours=2),
+            ended_at=now - timedelta(days=1),
+            status=CycleStatus.OK,
+            gemini_tokens=2_000,
+            gemini_dollars=0.05,
+        )
     )
 
     overview = store.dashboard_overview()

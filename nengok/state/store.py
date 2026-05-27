@@ -17,7 +17,13 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus, ExperimentResult
+from nengok.core.types import (
+    AnomalousSpan,
+    Cluster,
+    ClusterStatus,
+    CycleRecord,
+    ExperimentResult,
+)
 from nengok.state.migrator import (
     apply_pending,
     discover_migrations,
@@ -291,7 +297,9 @@ class StateStore:
     ) -> list[dict]:
         sql, params = _range_sql(
             """
-            SELECT cycle_id, started_at, ended_at, gemini_tokens, gemini_dollars
+            SELECT cycle_id, started_at, ended_at, status,
+                   clusters_processed, clusters_discovered,
+                   gemini_tokens, gemini_dollars, error_message
             FROM cycles
             """,
             column="started_at",
@@ -303,32 +311,51 @@ class StateStore:
             rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
-    def record_cycle_usage(
-        self,
-        *,
-        cycle_id: str,
-        started_at: datetime,
-        ended_at: datetime,
-        gemini_tokens: int,
-        gemini_dollars: float,
-    ) -> None:
-        """Persist a cycle's Gemini spend for the overview dashboard."""
+    def list_recent_cycles(self, *, limit: int = 10) -> list[dict]:
+        """Return the most recent cycle rows, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT cycle_id, started_at, ended_at, status,
+                       clusters_processed, clusters_discovered,
+                       gemini_tokens, gemini_dollars, error_message
+                FROM cycles
+                ORDER BY started_at DESC, cycle_id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_cycle(self, record: CycleRecord) -> None:
+        """Persist one cycle's outcome and Gemini spend for the overview dashboard."""
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO cycles (cycle_id, started_at, ended_at, gemini_tokens, gemini_dollars)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO cycles
+                  (cycle_id, started_at, ended_at, status,
+                   clusters_processed, clusters_discovered,
+                   gemini_tokens, gemini_dollars, error_message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cycle_id) DO UPDATE SET
                     ended_at = excluded.ended_at,
+                    status = excluded.status,
+                    clusters_processed = excluded.clusters_processed,
+                    clusters_discovered = excluded.clusters_discovered,
                     gemini_tokens = excluded.gemini_tokens,
-                    gemini_dollars = excluded.gemini_dollars
+                    gemini_dollars = excluded.gemini_dollars,
+                    error_message = excluded.error_message
                 """,
                 (
-                    cycle_id,
-                    started_at.isoformat(),
-                    ended_at.isoformat(),
-                    gemini_tokens,
-                    gemini_dollars,
+                    record.cycle_id,
+                    record.started_at.isoformat(),
+                    record.ended_at.isoformat(),
+                    record.status.value,
+                    record.clusters_processed,
+                    record.clusters_discovered,
+                    record.gemini_tokens,
+                    record.gemini_dollars,
+                    record.error_message,
                 ),
             )
 

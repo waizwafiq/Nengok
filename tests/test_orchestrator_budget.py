@@ -106,7 +106,7 @@ class _State:
         del result
         self.experiments.append(cluster_id)
 
-    def record_cycle_usage(self, **_: object) -> None:
+    def record_cycle(self, _record: object) -> None:
         return
 
 
