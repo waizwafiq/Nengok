@@ -176,9 +176,13 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: pip-audit
+        # `--skip-editable` excludes nengok itself: it is editable-installed
+        # and not on PyPI yet, so pip-audit can't audit it. `--strict` then
+        # gates only on dependency vulnerabilities, which is the gate v0.1
+        # wants to enforce.
         run: |
           pip install pip-audit
-          pip-audit --strict
+          pip-audit --skip-editable --strict
 
   bandit:
     name: bandit security scan
