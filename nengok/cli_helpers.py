@@ -5,10 +5,14 @@ without pulling in the full orchestrator stack.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
+from typing import Any
 
 from nengok import templates
+
+SECRET_FIELD_PATTERN = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization)")
 
 
 def write_config_file(
@@ -132,3 +136,45 @@ def _append_under_nengok_section(body: str, line: str) -> str:
 
 def _escape_toml_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def mask_secret(value: str | None) -> str:
+    """
+    Mask a secret-shaped string as `<prefix>****<suffix>` for safe display.
+
+    Returns `<unset>` for `None`. Values of nine characters or fewer are
+    fully masked so a short token does not effectively print itself.
+    """
+    if value is None:
+        return "<unset>"
+    if not isinstance(value, str):
+        value = str(value)
+    if len(value) <= 9:
+        return "****"
+    return f"{value[:4]}****{value[-4:]}"
+
+
+def format_config_for_display(config: Any) -> str:
+    """
+    Render the loaded config as `key = value` lines with secrets masked.
+
+    Walks the dataclass fields in declaration order so the output stays
+    stable across runs. Fields whose name matches `SECRET_FIELD_PATTERN`
+    (e.g. `google_api_key`, `dashboard_auth_token`) are routed through
+    `mask_secret`; everything else is printed verbatim. The caller is
+    free to pipe the result into a paste buffer without leaking keys.
+    """
+    if not dataclasses.is_dataclass(config):
+        raise TypeError("format_config_for_display expects a dataclass instance")
+
+    lines: list[str] = []
+    for f in dataclasses.fields(config):
+        value = getattr(config, f.name)
+        if SECRET_FIELD_PATTERN.search(f.name):
+            rendered = mask_secret(value if isinstance(value, str) else None)
+        elif value is None:
+            rendered = "<unset>"
+        else:
+            rendered = repr(value) if isinstance(value, str) else str(value)
+        lines.append(f"{f.name} = {rendered}")
+    return "\n".join(lines)

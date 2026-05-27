@@ -676,5 +676,31 @@ def config_init(
     )
 
 
+@config_app.command("show")
+def config_show(
+    config_path: Annotated[
+        Path,
+        typer.Option("--config-path", help="Path to read instead of the default."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """
+    Print the loaded config with every secret masked.
+
+    Lets users debug a misbehaving install (wrong Phoenix URL, stale
+    project name, etc.) without dumping raw keys into a paste buffer.
+    `google_api_key`, `phoenix_api_key`, and `dashboard_auth_token`
+    render as `AIza****1234`; an unset value renders as `<unset>`.
+    """
+    from nengok.cli_helpers import format_config_for_display
+
+    try:
+        config = NengokConfig.load(config_path=config_path)
+    except ConfigError as exc:
+        raise _abort(str(exc)) from exc
+
+    typer.echo(f"# Loaded from {config_path if config_path.exists() else '<env-only>'}")
+    typer.echo(format_config_for_display(config))
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(app())
