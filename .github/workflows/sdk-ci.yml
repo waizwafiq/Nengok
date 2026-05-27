@@ -177,14 +177,15 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: pip-audit
-        # `--skip-editable` excludes nengok itself: it is editable-installed
-        # and not on PyPI yet, so pip-audit can't audit it. `--strict` is
-        # omitted on purpose because pip-audit treats the editable skip as
-        # a warning, and under `--strict` that warning becomes a hard fail
-        # on Linux runners. Real dependency CVEs still exit 1 without it.
+        # Uninstall the editable nengok install before auditing so pip-audit
+        # never has to skip it. `--skip-editable` produces a Linux exit-1
+        # whether or not `--strict` is set, so taking nengok out of the
+        # picture entirely is the only invocation that stays portable.
+        # Real dependency CVEs still exit 1, which is the gate we want.
         run: |
           pip install pip-audit
-          pip-audit --skip-editable
+          pip uninstall -y nengok
+          pip-audit
 
   bandit:
     name: bandit security scan
