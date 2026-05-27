@@ -27,3 +27,10 @@ spec:
               value: "0.0.0.0"
             - name: NENGOK_DASHBOARD_PORT
               value: "8765"
+          livenessProbe:
+            httpGet:
+              path: /health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 4
+            failureThreshold: 3
