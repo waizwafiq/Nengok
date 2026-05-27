@@ -45,7 +45,7 @@ export function ApprovalHistory({ clusterId }: Props) {
     );
   }
 
-  const rows = approvals.data ?? [];
+  const rows: ApprovalRecord[] = Array.isArray(approvals.data) ? approvals.data : [];
   if (rows.length === 0) {
     return (
       <Card padding="md" className="border border-dashed border-border bg-card text-center">
