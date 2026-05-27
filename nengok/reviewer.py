@@ -58,14 +58,16 @@ def format_identity(name: str, email: str | None) -> str:
     return f"{cleaned_name} <{cleaned_email}>"
 
 
-def write_identity(identity: str, *, path: Path = REVIEWER_FILE_PATH) -> Path:
+def write_identity(identity: str, *, path: Path | None = None) -> Path:
     """
     Persist `identity` to `path`, creating the parent directory.
 
     Writes a single trailing newline so the file follows POSIX
     conventions and round-trips cleanly through `read_text().strip()`.
+    Defaults to `REVIEWER_FILE_PATH` at call time, which lets test
+    suites monkeypatch the module-level constant.
     """
-    target = Path(path)
+    target = Path(path) if path is not None else REVIEWER_FILE_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(f"{identity}\n", encoding="utf-8")
     return target
