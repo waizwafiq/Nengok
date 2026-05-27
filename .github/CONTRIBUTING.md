@@ -315,7 +315,7 @@ When you add a new stage that ships span text outward, accept an optional `redac
 
 ### Tests that need an optional extra
 
-SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12, so we catch the case where core SDK code accidentally requires an optional dependency. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
+SDK CI runs two pytest jobs. `test` installs `[dev]` only, on Python 3.11 and 3.12 across `ubuntu-latest` and `windows-latest` (four shards), so we catch the case where core SDK code accidentally requires an optional dependency or breaks on a different filesystem. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the same suite so the Gemini wrapper and Phoenix dataclass tests actually exercise the upstream types.
 
 A test file that imports `google.genai`, `phoenix.client.*`, or any other module from an optional extra at module top breaks collection in the minimal-deps job. Guard the import with `pytest.importorskip` so the test skips cleanly there and runs for real in the full-extras job:
 
@@ -333,6 +333,22 @@ from nengok.utils.gemini import call_gemini
 The `tests/**` per-file ignore in `pyproject.toml` allows imports below an `importorskip` call (otherwise ruff E402 would fire). Outside `tests/`, imports stay at the top. The relaxation is test-only and is the project's one structural exception to the no-suppressions rule above.
 
 The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments"` before pytest, so if either extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
+
+### Security and packaging gates
+
+SDK CI runs three more jobs that gate the production wheel:
+
+`bandit` scans `nengok/` against the config in `[tool.bandit]` (in `pyproject.toml`). The config skips three rule classes with documented rationale: `B101` (asserts used for type narrowing, since `-O` is not a supported deployment path), `B105` (string literals that match `*_token` are env-var names, not credentials), and `B310` (urlopen targets are operator-supplied URLs parsed at config-load). `tests/` and `phoenix_harness/` get a separate scan with `--skip B101,B104,B106,B108` for legitimate test patterns. Adding a new assert, urlopen, or `*_token` literal in production code is fine; bandit will not flag it. Adding a real secret to source is not fine. Keep credentials in env vars and the config TOML.
+
+`pip-audit` gates the dependency tree against known CVEs. The CI job uninstalls the editable nengok install before auditing, then runs `pip-audit` with no flags. pip-audit treats the editable skip as a fatal log on Linux runners, so removing nengok from the active environment is the only portable way to keep the gate honest about dependency CVEs without false failures on the unpublished package itself. If a transitive dependency picks up a CVE, bump the offending package in `pyproject.toml` rather than suppressing.
+
+`smoke-install` builds the wheel via `python -m build`, installs it in a clean venv, and runs `nengok --version` plus `nengok init --help`. This catches packaging regressions the editable install hides, such as a missing `[project.scripts]` entry or a forgotten data file in the hatch include list.
+
+### Frontend tests
+
+`frontend/` has a Vitest + React Testing Library suite under `frontend/src/pages/__tests__/`. Page tests render through the `renderWithProviders` helper in [frontend/src/test/renderWithProviders.tsx](../frontend/src/test/renderWithProviders.tsx), which wraps the component in a fresh `QueryClient`, a `MemoryRouter`, and the `LayoutProvider`. API modules under `frontend/src/api/` are mocked with `vi.spyOn(...)` so tests never hit a backend.
+
+Run them with `npm test` (one-shot) or `npm run test:watch`. Frontend CI runs the same `npm test` command in a separate `Vitest` job alongside the existing lint and build jobs.
 
 ## Phoenix API Cheatsheet
 

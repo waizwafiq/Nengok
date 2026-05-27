@@ -38,7 +38,7 @@ dependencies = [
     "typer>=0.12.0",
     "pydantic>=2.6.0",
     "httpx>=0.27.0",
-    "fastapi>=0.115.0",
+    "fastapi>=0.115.0,!=0.136.3",
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
     "tenacity>=8.4.0",
@@ -53,9 +53,12 @@ phoenix = [
     "arize-phoenix-evals>=0.20.0",
     "arize-phoenix-otel>=0.16.0",
     "openinference-instrumentation>=0.1.0",
+    # Override the transitive that arize-phoenix pulls in: 0.314.3 carries
+    # CVE-2026-45739, fixed in 0.315.4.
+    "strawberry-graphql>=0.315.4",
 ]
 server = [
-    "fastapi>=0.115.0",
+    "fastapi>=0.115.0,!=0.136.3",
     "uvicorn[standard]>=0.30.0",
 ]
 clustering = [
@@ -160,3 +163,25 @@ markers = [
     "slow: integration tests that hit live Phoenix / Gemini APIs",
 ]
 asyncio_mode = "auto"
+
+[tool.bandit]
+# Scope the scan to first-party code; tests and the live harness are
+# scanned separately by the SDK CI workflow with the test-only skips
+# applied there.
+exclude_dirs = ["tests", "phoenix_harness", ".venv", "frontend", "node_modules"]
+skips = [
+    # B101 (assert_used): the orchestrator and MCP client use asserts for
+    # type narrowing on values guaranteed non-None by the surrounding
+    # control flow. Running under `python -O` is not a supported
+    # deployment path.
+    "B101",
+    # B105 (hardcoded_password_string): false positives on env-var name
+    # literals like `NENGOK_DASHBOARD_AUTH_TOKEN`. Nengok has no plaintext
+    # secrets in source; all credentials flow through env vars or config.
+    "B105",
+    # B310 (urllib_urlopen): every urlopen site receives a URL that
+    # NengokConfig.validate() has already parsed and confirmed has a
+    # scheme + netloc. Operator-supplied schemes outside http(s) are an
+    # operator choice, not an injected attack surface.
+    "B310",
+]
