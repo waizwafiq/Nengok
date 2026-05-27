@@ -6,7 +6,7 @@ import pytest
 
 from nengok.config import NengokConfig
 from nengok.core.evaluators.code_evals import default_code_evaluators
-from nengok.core.fixer.prompt_proposer import SAMPLE_AGENT_PROMPT_PATH
+from nengok.core.fixer.loaders import SAMPLE_AGENT_PROMPT_PATH
 from nengok.phoenix.client import PhoenixWrapper
 
 

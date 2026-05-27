@@ -38,7 +38,7 @@ def test_run_experiment_pass_rate_is_perfect(phoenix_config: NengokConfig) -> No
 @pytest.mark.slow
 def test_two_golden_experiments_have_distinct_names(phoenix_config: NengokConfig) -> None:
     wrapper = PhoenixWrapper(phoenix_config)
-    from nengok.core.fixer.prompt_proposer import SAMPLE_AGENT_PROMPT_PATH
+    from nengok.core.fixer.loaders import SAMPLE_AGENT_PROMPT_PATH
 
     prompt = SAMPLE_AGENT_PROMPT_PATH.read_text(encoding="utf-8")
     baseline_run, fix_run = wrapper.run_golden_comparison(
