@@ -8,7 +8,12 @@ import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { Sparkline } from "../components/ui/Sparkline";
-import type { GeminiSpendPoint } from "../types/dashboard";
+import type {
+  CycleStatus,
+  GeminiSpendPoint,
+  RecentCycle,
+  RecentCycleStatusCounts,
+} from "../types/dashboard";
 
 export function OverviewPage() {
   useLayoutBreadcrumb([{ label: "Workspace" }, { label: "Overview" }]);
@@ -133,6 +138,15 @@ export function OverviewPage() {
           sparkline={data.gemini_spend_sparkline_30d ?? []}
         />
       </section>
+
+      <section className="mb-3 mt-8 flex items-center justify-between">
+        <h2 className="section-label">Recent cycles</h2>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CycleSpendCard cycles={data.recent_cycles ?? []} />
+        <CycleStatusCard counts={data.recent_cycle_status_counts ?? {}} />
+      </section>
     </div>
   );
 }
@@ -182,6 +196,95 @@ function CostCard({
       </div>
       <div className="mt-1 text-xs text-muted-foreground">{formatTokenCount(tokens)} tokens</div>
     </Card>
+  );
+}
+
+const CYCLE_STATUS_ORDER: CycleStatus[] = ["ok", "over_budget", "circuit_broken", "failed"];
+
+const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
+  ok: "OK",
+  over_budget: "Over budget",
+  circuit_broken: "Circuit broken",
+  failed: "Failed",
+};
+
+const CYCLE_STATUS_BAR: Record<CycleStatus, string> = {
+  ok: "bg-status-fix",
+  over_budget: "bg-status-diagnosed",
+  circuit_broken: "bg-status-escalated",
+  failed: "bg-destructive",
+};
+
+function CycleSpendCard({ cycles }: { cycles: RecentCycle[] }) {
+  const ordered = [...cycles].reverse();
+  const values = ordered.map((cycle) => cycle.gemini_dollars);
+  const latest = cycles[0];
+  return (
+    <Card>
+      <div className="section-label">Cost of last {cycles.length || "—"} cycles</div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="text-2xl font-semibold tabular-nums text-foreground">
+          {latest ? formatDollars(latest.gemini_dollars) : "—"}
+        </div>
+        <Sparkline values={values} width={140} height={32} />
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {latest ? `latest ${formatCycleTimestamp(latest.started_at)}` : "no cycles recorded yet"}
+      </div>
+    </Card>
+  );
+}
+
+function CycleStatusCard({ counts }: { counts: RecentCycleStatusCounts }) {
+  const entries = CYCLE_STATUS_ORDER.map((status) => ({
+    status,
+    value: counts[status] ?? 0,
+  }));
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  return (
+    <Card>
+      <div className="section-label">Cycle outcomes (last {total || "—"})</div>
+      <div className="mt-3 space-y-2">
+        {entries.map((entry) => (
+          <CycleStatusRow
+            key={entry.status}
+            label={CYCLE_STATUS_LABEL[entry.status]}
+            value={entry.value}
+            total={total}
+            barClassName={CYCLE_STATUS_BAR[entry.status]}
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function CycleStatusRow({
+  label,
+  value,
+  total,
+  barClassName,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  barClassName: string;
+}) {
+  const width = total === 0 ? 0 : (value / total) * 100;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="tabular-nums text-foreground">{value}</span>
+      </div>
+      <div className="mt-1 h-2 rounded bg-muted">
+        <div
+          className={`h-full rounded ${barClassName}`}
+          style={{ width: `${width}%` }}
+          aria-hidden
+        />
+      </div>
+    </div>
   );
 }
 
@@ -245,6 +348,19 @@ function formatPercent(value: number | null): string {
 
 function formatDollars(value: number): string {
   return `$${value.toFixed(2)}`;
+}
+
+function formatCycleTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function formatTokenCount(value: number): string {
