@@ -6,6 +6,7 @@ import { renderWithProviders } from "../../test/renderWithProviders";
 import * as clustersApi from "../../api/clusters";
 import * as artifactsApi from "../../api/artifacts";
 import * as approvalsApi from "../../api/approvals";
+import * as clientModule from "../../api/client";
 import * as experimentsApi from "../../api/experiments";
 import type { Cluster } from "../../types/cluster";
 import type { ArtifactBundle } from "../../types/artifact";
@@ -64,6 +65,10 @@ describe("ClusterDetailPage", () => {
     vi.spyOn(clustersApi, "fetchCluster").mockResolvedValue(buildCluster());
     vi.spyOn(artifactsApi, "fetchArtifacts").mockResolvedValue(buildArtifacts());
     mockExperiments();
+    vi.spyOn(approvalsApi, "fetchClusterApprovals").mockResolvedValue([]);
+    vi.spyOn(clientModule.apiClient, "get").mockResolvedValue({
+      data: { reviewer: "alice", source: "env" },
+    } as never);
     const submit = vi.spyOn(approvalsApi, "submitApproval").mockResolvedValue({
       approval_id: "a-1",
       cluster_id: "c-1",
@@ -79,7 +84,11 @@ describe("ClusterDetailPage", () => {
     await userEvent.click(approve);
 
     await waitFor(() => {
-      expect(submit).toHaveBeenCalledWith("c-1", "approved");
+      expect(submit).toHaveBeenCalledWith("c-1", {
+        decision: "approved",
+        reviewer: "alice",
+        reason: null,
+      });
     });
   });
 
