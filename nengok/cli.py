@@ -747,6 +747,90 @@ def config_show(
     typer.echo(format_config_for_display(config))
 
 
+@app.command("export")
+def export(
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Lower date bound (YYYY-MM-DD, UTC). Inclusive."),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option("--until", help="Upper date bound (YYYY-MM-DD, UTC). Inclusive."),
+    ] = None,
+    output_format: Annotated[
+        str,
+        typer.Option("--format", "-f", help="Output format: 'json' (default) or 'csv'."),
+    ] = "json",
+    output_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Write to this file instead of stdout. Parent directories are created if missing.",
+        ),
+    ] = None,
+) -> None:
+    """
+    Dump clusters, approvals, experiments, cycles, and artifact pointers as an audit bundle.
+
+    JSON output matches the schema in `docs/audit-export.md` and is the
+    seed for the v1.0 EU AI Act audit bundle. CSV output emits two
+    sections (`# clusters` then `# approvals`) so a reviewer can split
+    the stream and import each block into a spreadsheet.
+    """
+    from nengok.state.export import (
+        ExportDateError,
+        build_bundle,
+        parse_date_argument,
+        serialize_csv,
+        serialize_json,
+    )
+    from nengok.state.store import StateStore
+
+    fmt = output_format.lower()
+    if fmt not in {"json", "csv"}:
+        raise _abort(f"Unknown --format '{output_format}'. Pick 'json' or 'csv'.")
+
+    config = _load_config()
+    if not config.state_db_path.exists():
+        raise _abort(
+            f"No state database at {config.state_db_path}. "
+            "Run `nengok db migrate` (or `nengok run`) to create it."
+        )
+
+    try:
+        since_dt = parse_date_argument(since, kind="since")
+        until_dt = parse_date_argument(until, kind="until")
+    except ExportDateError as exc:
+        raise _abort(str(exc)) from exc
+
+    store = StateStore(config.state_db_path)
+    try:
+        bundle = build_bundle(
+            store=store,
+            artifacts_dir=config.artifacts_dir,
+            since=since_dt,
+            until=until_dt,
+        )
+    except ExportDateError as exc:
+        raise _abort(str(exc)) from exc
+
+    rendered = serialize_json(bundle) if fmt == "json" else serialize_csv(bundle)
+
+    if output_path is None:
+        typer.echo(rendered)
+        return
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(rendered, encoding="utf-8")
+    typer.echo(
+        f"Wrote {fmt} export to {output_path} "
+        f"(clusters={len(bundle.clusters)}, approvals={len(bundle.approvals)}, "
+        f"experiments={len(bundle.experiments)}, cycles={len(bundle.cycles)}, "
+        f"artifacts={len(bundle.artifacts)}).",
+        err=True,
+    )
+
+
 @db_app.command("migrate")
 def db_migrate() -> None:
     """

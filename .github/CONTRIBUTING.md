@@ -237,6 +237,10 @@ Reviewer identity is resolved in this order: the value supplied in the request b
 
 To inspect the resolved config without leaking keys, run `nengok config show`. Every field whose name matches `api_key`, `token`, `secret`, `password`, or `authorization` renders as `prefix****suffix` (for example `google_api_key = AIza****uvwx`), so the output is safe to drop in a paste buffer or a support ticket. Every Nengok process also writes one INFO line on startup that names the version, the config path actually read, the redactor state, and the Phoenix base URL (`nengok v0.1.0 starting (config: ~/.nengok/config.toml, redaction: enabled, phoenix: https://...)`). Operators can grep for `redaction: disabled` in a log shipper to catch a misconfigured deployment before it ships span text to Gemini in the clear.
 
+#### State export
+
+`nengok export --since YYYY-MM-DD --until YYYY-MM-DD > audit.json` writes the clusters, approvals, experiments, cycles, and per-cluster artifact pointers inside the date window as a single JSON bundle. Both bounds are optional and parsed as UTC midnight; `--until` is inclusive of the named day. Output goes to stdout by default so the shell redirect at the end of the command works as written; pass `--output PATH` to write to a file and get a one-line summary on stderr instead. Pass `--format csv` for a two-section CSV (`# clusters` then `# approvals`) that a reviewer can split and import into a spreadsheet. The JSON shape is documented in [docs/audit-export.md](../docs/audit-export.md) and is the seed for the v1.0 EU AI Act audit bundle, so field renames are forbidden once shipped (additions land at the end of their section). Every artifact entry includes a sha256 of each on-disk file so a downstream auditor can verify nothing has been edited since the bundle was produced.
+
 ### 7. Launch the dashboard (optional)
 
 ```bash
