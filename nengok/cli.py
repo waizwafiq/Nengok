@@ -66,6 +66,14 @@ config_app = typer.Typer(
 )
 app.add_typer(config_app, name="config")
 
+db_app = typer.Typer(
+    name="db",
+    help="Inspect and manage the local SQLite state schema.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(db_app, name="db")
+
 logger = get_logger(__name__)
 
 
@@ -737,6 +745,116 @@ def config_show(
 
     typer.echo(f"# Loaded from {config_path if config_path.exists() else '<env-only>'}")
     typer.echo(format_config_for_display(config))
+
+
+@db_app.command("migrate")
+def db_migrate() -> None:
+    """
+    Apply any pending migrations against the configured state database.
+
+    A no-op when the database is already at the latest version. Errors
+    on checksum drift with the same copy-paste fix message `nengok run`
+    would print on startup.
+    """
+    import sqlite3
+
+    from nengok.state.migrator import (
+        MigrationError,
+        apply_pending,
+        discover_migrations,
+        packaged_migrations_source,
+    )
+
+    config = _load_config()
+    config.state_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    migrations = discover_migrations(packaged_migrations_source())
+    conn = sqlite3.connect(config.state_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        applied = apply_pending(conn, migrations)
+        conn.commit()
+    except MigrationError as exc:
+        conn.close()
+        raise _abort(str(exc)) from exc
+    finally:
+        if conn:
+            conn.close()
+
+    if not applied:
+        typer.echo("No pending migrations. Database is up to date.")
+        return
+    for migration in applied:
+        typer.echo(f"Applied {migration.filename} (sha256 {migration.checksum[:7]}).")
+
+
+@db_app.command("status")
+def db_status() -> None:
+    """
+    Print every applied migration with its checksum, oldest first.
+
+    Use this to confirm that a freshly cloned environment matches a
+    deployed one before promoting a change.
+    """
+    import sqlite3
+
+    from nengok.state.migrator import applied_migrations
+
+    config = _load_config()
+    if not config.state_db_path.exists():
+        typer.echo(f"No state database at {config.state_db_path}. Run `nengok db migrate` first.")
+        raise typer.Exit(code=1)
+
+    conn = sqlite3.connect(config.state_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        records = applied_migrations(conn)
+    finally:
+        conn.close()
+
+    if not records:
+        typer.echo("No migrations applied yet. Run `nengok db migrate`.")
+        return
+    typer.echo(f"{'version':>7}  {'applied_at':<32}  checksum")
+    for record in records:
+        typer.echo(f"{record.version:>7}  {record.applied_at:<32}  {record.checksum[:12]}")
+
+
+@db_app.command("check")
+def db_check() -> None:
+    """
+    Verify every applied migration still matches its on-disk sha256.
+
+    Exits 0 when checksums match, 1 when any migration has drifted.
+    """
+    import sqlite3
+
+    from nengok.state.migrator import (
+        discover_migrations,
+        packaged_migrations_source,
+        verify_checksums,
+    )
+
+    config = _load_config()
+    if not config.state_db_path.exists():
+        typer.echo(f"No state database at {config.state_db_path}. Run `nengok db migrate` first.")
+        raise typer.Exit(code=1)
+
+    migrations = discover_migrations(packaged_migrations_source())
+    conn = sqlite3.connect(config.state_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        drifted = verify_checksums(conn, migrations)
+    finally:
+        conn.close()
+
+    if not drifted:
+        typer.echo(f"All {len(migrations)} migration(s) match their applied checksum.")
+        return
+    typer.echo("Checksum drift detected. Migrations are immutable once applied.", err=True)
+    for migration in drifted:
+        typer.echo(f"  {migration.filename} (now sha256 {migration.checksum[:12]})", err=True)
+    raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":  # pragma: no cover
