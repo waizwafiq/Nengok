@@ -193,13 +193,15 @@ jobs:
           python-version: "3.11"
 
       - name: Install bandit
-        run: pip install bandit
+        run: pip install 'bandit[toml]'
 
-      - name: Scan nengok/ (all checks)
-        run: bandit -r nengok/
+      - name: Scan nengok/ (config from pyproject.toml)
+        run: bandit -r nengok/ -c pyproject.toml
 
-      - name: Scan tests/ and phoenix_harness/ (skip B101 asserts)
-        run: bandit -r tests/ phoenix_harness/ --skip B101
+      - name: Scan tests/ and phoenix_harness/ (skip test-only false positives)
+        # B101 asserts; B104 0.0.0.0 binding under test; B106 literal test
+        # tokens; B108 tmp_path fixtures.
+        run: bandit -r tests/ phoenix_harness/ --skip B101,B104,B106,B108
 
   smoke-install:
     name: Smoke install (wheel)
