@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -22,6 +24,32 @@ _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
     "dismissed": ClusterStatus.DISMISSED,
     "escalated": ClusterStatus.ESCALATED,
 }
+
+
+REVIEWER_ENV_VAR = "NENGOK_REVIEWER"
+REVIEWER_FILE_PATH = Path.home() / ".nengok" / "reviewer.txt"
+ANONYMOUS_REVIEWER = "anonymous"
+
+
+def resolve_reviewer(provided: str | None) -> tuple[str, str]:
+    """
+    Return the reviewer string to record plus its provenance.
+
+    Order: explicit body field, then `NENGOK_REVIEWER`, then
+    `~/.nengok/reviewer.txt`, then the literal "anonymous".
+    """
+    if provided:
+        trimmed = provided.strip()
+        if trimmed:
+            return trimmed, "request"
+    env_value = os.environ.get(REVIEWER_ENV_VAR, "").strip()
+    if env_value:
+        return env_value, "env"
+    if REVIEWER_FILE_PATH.is_file():
+        file_value = REVIEWER_FILE_PATH.read_text(encoding="utf-8").strip()
+        if file_value:
+            return file_value, "file"
+    return ANONYMOUS_REVIEWER, "fallback"
 
 
 class ApprovalCreate(BaseModel):
@@ -53,18 +81,27 @@ class ApprovalResponse(BaseModel):
 def _record(
     store: StoreDep, *, cluster_id: str, decision: str, reviewer: str | None, reason: str | None
 ) -> dict:
+    resolved, source = resolve_reviewer(reviewer)
     approval_id = store.record_approval(
         cluster_id=cluster_id,
         decision=decision,
-        reviewer=reviewer,
-        reason=reason,
+        reviewer=resolved,
+        reason=(reason.strip() if reason else None) or None,
     )
     store.mark_status(cluster_id, _DECISION_TO_STATUS[decision])
     return {
         "approval_id": approval_id,
         "cluster_id": cluster_id,
         "status": _DECISION_TO_STATUS[decision].value,
+        "reviewer": resolved,
+        "reviewer_source": source,
     }
+
+
+@router.get("/reviewer")
+def get_reviewer() -> dict[str, str | None]:
+    resolved, source = resolve_reviewer(None)
+    return {"reviewer": resolved, "source": source}
 
 
 @router.get("/approvals")
