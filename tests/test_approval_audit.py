@@ -170,7 +170,7 @@ def test_get_reviewer_falls_back_to_anonymous(tmp_path: Path, monkeypatch: pytes
     assert body == {"reviewer": ANONYMOUS_REVIEWER, "source": "fallback"}
 
 
-def test_resolve_reviewer_prefers_env_then_file_then_anonymous(
+def test_resolve_reviewer_prefers_file_then_env_then_anonymous(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     file_path = tmp_path / "reviewer.txt"
@@ -179,11 +179,11 @@ def test_resolve_reviewer_prefers_env_then_file_then_anonymous(
 
     assert resolve_reviewer(None) == (ANONYMOUS_REVIEWER, "fallback")
 
-    file_path.write_text(" charlie\n", encoding="utf-8")
-    assert resolve_reviewer(None) == ("charlie", "file")
-
     monkeypatch.setenv(REVIEWER_ENV_VAR, "  alice  ")
     assert resolve_reviewer(None) == ("alice", "env")
+
+    file_path.write_text(" charlie\n", encoding="utf-8")
+    assert resolve_reviewer(None) == ("charlie", "file")
 
     assert resolve_reviewer(" bob ") == ("bob", "request")
 

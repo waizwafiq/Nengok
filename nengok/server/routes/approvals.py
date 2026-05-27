@@ -35,20 +35,23 @@ def resolve_reviewer(provided: str | None) -> tuple[str, str]:
     """
     Return the reviewer string to record plus its provenance.
 
-    Order: explicit body field, then `NENGOK_REVIEWER`, then
-    `~/.nengok/reviewer.txt`, then the literal "anonymous".
+    Order: explicit body field, then `~/.nengok/reviewer.txt`
+    (managed by `nengok reviewer set`), then `NENGOK_REVIEWER`,
+    then the literal "anonymous". File wins over env so a per-user
+    CLI identity is not silently overridden by a deployment-wide
+    env var.
     """
     if provided:
         trimmed = provided.strip()
         if trimmed:
             return trimmed, "request"
-    env_value = os.environ.get(REVIEWER_ENV_VAR, "").strip()
-    if env_value:
-        return env_value, "env"
     if REVIEWER_FILE_PATH.is_file():
         file_value = REVIEWER_FILE_PATH.read_text(encoding="utf-8").strip()
         if file_value:
             return file_value, "file"
+    env_value = os.environ.get(REVIEWER_ENV_VAR, "").strip()
+    if env_value:
+        return env_value, "env"
     return ANONYMOUS_REVIEWER, "fallback"
 
 
