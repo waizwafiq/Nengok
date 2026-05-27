@@ -83,13 +83,14 @@ jobs:
         run: mypy nengok
 
   test:
-    name: pytest (Python ${{ matrix.python-version }})
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
     needs: check
     if: needs.check.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
