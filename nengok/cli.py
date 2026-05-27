@@ -619,14 +619,54 @@ def _error_label(exc: NengokError) -> str:
     return "nengok-error"
 
 
-def _load_config(**overrides: Any) -> NengokConfig:
+_STARTUP_BANNER_LOGGED = False
+
+
+def _load_config(*, config_path: Path | None = None, **overrides: Any) -> NengokConfig:
     try:
         cleaned = {k: v for k, v in overrides.items() if v is not None}
-        return NengokConfig.load(**cleaned)
+        if config_path is not None:
+            cleaned["config_path"] = config_path
+        config = NengokConfig.load(**cleaned)
     except ConfigError as exc:
         raise _abort(str(exc)) from exc
     except ValueError as exc:
         raise _abort(str(exc)) from exc
+
+    _log_startup_banner(config, config_path=config_path)
+    return config
+
+
+def _log_startup_banner(config: NengokConfig, *, config_path: Path | None = None) -> None:
+    """
+    Emit one INFO line per process so missing redaction is visible in operations.
+
+    Idempotent across the lifetime of the process: `nengok watch` calls
+    `_load_config()` again on a config reload, but operators only need
+    the banner once. Cite the version, the config path actually read,
+    whether the redactor will run, and the Phoenix URL so a log shipper
+    has the full operational fingerprint of this invocation in one line.
+    """
+    global _STARTUP_BANNER_LOGGED
+    if _STARTUP_BANNER_LOGGED:
+        return
+    redaction_state = "enabled" if config.redaction_enabled else "disabled"
+    chosen_path = config_path or DEFAULT_CONFIG_PATH
+    resolved = chosen_path if chosen_path.exists() else Path("<env-only>")
+    logger.info(
+        "nengok v%s starting (config: %s, redaction: %s, phoenix: %s)",
+        __version__,
+        resolved,
+        redaction_state,
+        config.phoenix_base_url,
+    )
+    _STARTUP_BANNER_LOGGED = True
+
+
+def _reset_startup_banner_for_tests() -> None:
+    """Allow the suite to re-arm the banner between CliRunner invocations."""
+    global _STARTUP_BANNER_LOGGED
+    _STARTUP_BANNER_LOGGED = False
 
 
 @config_app.command("init")
@@ -674,6 +714,29 @@ def config_init(
         "Open it to fill in GOOGLE_API_KEY (or set the env var), then run "
         "`nengok doctor` to verify the install."
     )
+
+
+@config_app.command("show")
+def config_show(
+    config_path: Annotated[
+        Path,
+        typer.Option("--config-path", help="Path to read instead of the default."),
+    ] = DEFAULT_CONFIG_PATH,
+) -> None:
+    """
+    Print the loaded config with every secret masked.
+
+    Lets users debug a misbehaving install (wrong Phoenix URL, stale
+    project name, etc.) without dumping raw keys into a paste buffer.
+    `google_api_key`, `phoenix_api_key`, and `dashboard_auth_token`
+    render as `AIza****1234`; an unset value renders as `<unset>`.
+    """
+    from nengok.cli_helpers import format_config_for_display
+
+    config = _load_config(config_path=config_path)
+
+    typer.echo(f"# Loaded from {config_path if config_path.exists() else '<env-only>'}")
+    typer.echo(format_config_for_display(config))
 
 
 if __name__ == "__main__":  # pragma: no cover
