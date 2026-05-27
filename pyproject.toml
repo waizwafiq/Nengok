@@ -99,7 +99,7 @@ packages = ["nengok"]
 artifacts = ["nengok/server/static/**"]
 
 [tool.hatch.build.targets.wheel.shared-data]
-"nengok/state/schema.sql" = "nengok/state/schema.sql"
+"nengok/state/migrations" = "nengok/state/migrations"
 "nengok/templates/config-local.toml" = "nengok/templates/config-local.toml"
 "nengok/templates/config-cloud.toml" = "nengok/templates/config-cloud.toml"
 "nengok/templates/config-qa-agent.toml" = "nengok/templates/config-qa-agent.toml"

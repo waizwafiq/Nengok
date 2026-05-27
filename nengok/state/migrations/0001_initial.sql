@@ -1,5 +1,6 @@
--- Nengok local state schema.
--- Applied idempotently by `StateStore.__init__`.
+-- 0001_initial.sql
+-- Baseline schema: clusters, seen_spans, approvals, experiments, cycles.
+-- Migrations are immutable once applied; create a new file for further changes.
 
 CREATE TABLE IF NOT EXISTS clusters (
     cluster_id        TEXT PRIMARY KEY,

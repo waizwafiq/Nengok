@@ -33,7 +33,12 @@ class StateStore:
         self._apply_schema()
 
     def _apply_schema(self) -> None:
-        schema = resources.files("nengok.state").joinpath("schema.sql").read_text(encoding="utf-8")
+        schema = (
+            resources.files("nengok.state")
+            .joinpath("migrations")
+            .joinpath("0001_initial.sql")
+            .read_text(encoding="utf-8")
+        )
         with self._connect() as conn:
             conn.executescript(schema)
             self._migrate_cluster_columns(conn)
