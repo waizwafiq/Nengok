@@ -15,10 +15,14 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from importlib import resources
 from pathlib import Path
 
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus, ExperimentResult
+from nengok.state.migrator import (
+    apply_pending,
+    discover_migrations,
+    packaged_migrations_source,
+)
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,25 +34,20 @@ class StateStore:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._apply_schema()
+        self._initialize()
 
-    def _apply_schema(self) -> None:
-        schema = (
-            resources.files("nengok.state")
-            .joinpath("migrations")
-            .joinpath("0001_initial.sql")
-            .read_text(encoding="utf-8")
-        )
+    def _initialize(self) -> None:
+        """
+        Apply every pending migration inside one transaction.
+
+        Discovery uses `importlib.resources` so the migrations directory
+        works for an editable install, a wheel install, and a zipapp.
+        Migration ordering, checksum verification, and the
+        `schema_versions` bookkeeping live in `nengok.state.migrator`.
+        """
+        migrations = discover_migrations(packaged_migrations_source())
         with self._connect() as conn:
-            conn.executescript(schema)
-            self._migrate_cluster_columns(conn)
-
-    @staticmethod
-    def _migrate_cluster_columns(conn: sqlite3.Connection) -> None:
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(clusters)").fetchall()}
-        for column in ("first_seen", "diagnosed_at"):
-            if column not in existing:
-                conn.execute(f"ALTER TABLE clusters ADD COLUMN {column} TEXT")
+            apply_pending(conn, migrations)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
