@@ -223,6 +223,8 @@ After a successful cycle Phoenix will hold two projects: your monitored project 
 
 If a later change breaks the install, run `nengok doctor` for a read-only sweep. Each probe lives under [nengok/diagnostics/](../nengok/diagnostics/) and reports one line of the same `[ok|warn|fail] name: detail` shape, with a copy-paste fix hint printed below each non-OK probe. The default set checks the config file, Phoenix reachability and project visibility, a Gemini one-token ping, the optional baseline prompt path, and the agent runner. Exit codes are 0 on all pass and 1 on any fail; pass `--strict` to also fail on warnings (useful when an empty Phoenix project would otherwise hide a setup mistake), or `--json` for a machine-readable payload that drops into a CI gate.
 
+To inspect the resolved config without leaking keys, run `nengok config show`. Every field whose name matches `api_key`, `token`, `secret`, `password`, or `authorization` renders as `prefix****suffix` (for example `google_api_key = AIza****uvwx`), so the output is safe to drop in a paste buffer or a support ticket. Every Nengok process also writes one INFO line on startup that names the version, the config path actually read, the redactor state, and the Phoenix base URL (`nengok v0.1.0 starting (config: ~/.nengok/config.toml, redaction: enabled, phoenix: https://...)`). Operators can grep for `redaction: disabled` in a log shipper to catch a misconfigured deployment before it ships span text to Gemini in the clear.
+
 ### 7. Launch the dashboard (optional)
 
 ```bash
