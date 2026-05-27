@@ -11,6 +11,7 @@ a copy-paste fix message that names the next free version number.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import sqlite3
@@ -131,12 +132,35 @@ def apply_pending(conn: sqlite3.Connection, migrations: list[Migration]) -> list
     now = datetime.now(UTC).isoformat()
     for migration in pending:
         logger.info("Applying migration %s", migration.filename)
-        conn.executescript(migration.sql)
-        conn.execute(
-            "INSERT INTO schema_versions (version, applied_at, checksum) VALUES (?, ?, ?)",
-            (migration.version, now, migration.checksum),
-        )
+        _apply_atomically(conn, migration=migration, applied_at=now)
     return pending
+
+
+def _apply_atomically(conn: sqlite3.Connection, *, migration: Migration, applied_at: str) -> None:
+    """
+    Run one migration's DDL plus its `schema_versions` row inside one transaction.
+
+    `executescript` implicitly commits any open transaction first, so an
+    outer `BEGIN` is not enough on its own. We embed `BEGIN`/`COMMIT` in
+    the script and issue an explicit `ROLLBACK` on failure to undo any
+    partial DDL the broken statement may have left behind.
+    """
+    body = migration.sql.strip()
+    if body.endswith(";"):
+        body = body[:-1]
+    script = (
+        "BEGIN;\n"
+        f"{body};\n"
+        f"INSERT INTO schema_versions (version, applied_at, checksum) "
+        f"VALUES ({migration.version}, '{applied_at}', '{migration.checksum}');\n"
+        "COMMIT;\n"
+    )
+    try:
+        conn.executescript(script)
+    except sqlite3.Error:
+        with contextlib.suppress(sqlite3.Error):
+            conn.execute("ROLLBACK")
+        raise
 
 
 def verify_checksums(conn: sqlite3.Connection, migrations: list[Migration]) -> list[Migration]:
