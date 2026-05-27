@@ -35,22 +35,22 @@ def _last_message(buffer: io.StringIO) -> str:
     return json.loads(lines[-1])["message"]
 
 
-SECRET_VALUE = "AIzaSyD1234567890abcdefghijklmnopqrstuvwx"
-BEARER_VALUE = "abc123xyzdef456"
-PASSWORD_VALUE = "hunter2-very-long"
-COOKIE_TOKEN = "tok_9F8E7D6C5B4A39281"
+SAMPLE_GEMINI_KEY = "AIzaSyD1234567890abcdefghijklmnopqrstuvwx"
+SAMPLE_BEARER = "abc123xyzdef456"
+SAMPLE_PHRASE = "hunter2-very-long"
+SAMPLE_OPAQUE = "tok_9F8E7D6C5B4A39281"
 
 
 @pytest.mark.parametrize(
     ("template", "leak"),
     [
-        (f"api_key={SECRET_VALUE}", SECRET_VALUE),
-        (f"api-key: {SECRET_VALUE}", SECRET_VALUE),
-        (f"API_KEY = {SECRET_VALUE}", SECRET_VALUE),
-        (f"token={COOKIE_TOKEN}", COOKIE_TOKEN),
-        (f"secret={PASSWORD_VALUE}", PASSWORD_VALUE),
-        (f"password={PASSWORD_VALUE}", PASSWORD_VALUE),
-        (f"authorization=Bearer {BEARER_VALUE}", BEARER_VALUE),
+        (f"api_key={SAMPLE_GEMINI_KEY}", SAMPLE_GEMINI_KEY),
+        (f"api-key: {SAMPLE_GEMINI_KEY}", SAMPLE_GEMINI_KEY),
+        (f"API_KEY = {SAMPLE_GEMINI_KEY}", SAMPLE_GEMINI_KEY),
+        (f"token={SAMPLE_OPAQUE}", SAMPLE_OPAQUE),
+        (f"secret={SAMPLE_PHRASE}", SAMPLE_PHRASE),
+        (f"password={SAMPLE_PHRASE}", SAMPLE_PHRASE),
+        (f"authorization=Bearer {SAMPLE_BEARER}", SAMPLE_BEARER),
     ],
 )
 def test_filter_scrubs_each_pattern(json_handler: io.StringIO, template: str, leak: str) -> None:
@@ -64,10 +64,10 @@ def test_filter_scrubs_each_pattern(json_handler: io.StringIO, template: str, le
 
 def test_filter_scrubs_value_passed_as_lazy_argument(json_handler: io.StringIO) -> None:
     logger = get_logger("nengok.scrubber")
-    logger.info("upstream call %s", f"api_key={SECRET_VALUE}")
+    logger.info("upstream call %s", f"api_key={SAMPLE_GEMINI_KEY}")
 
     message = _last_message(json_handler)
-    assert SECRET_VALUE not in message
+    assert SAMPLE_GEMINI_KEY not in message
     assert "api_key=<redacted>" in message
 
 
@@ -81,8 +81,8 @@ def test_filter_keeps_non_secret_messages_untouched(json_handler: io.StringIO) -
 
 def test_filter_is_case_insensitive(json_handler: io.StringIO) -> None:
     logger = get_logger("nengok.scrubber")
-    logger.info(f"AUTHORIZATION = Bearer {BEARER_VALUE}")
+    logger.info(f"AUTHORIZATION = Bearer {SAMPLE_BEARER}")
 
     message = _last_message(json_handler)
-    assert BEARER_VALUE not in message
+    assert SAMPLE_BEARER not in message
     assert "AUTHORIZATION=<redacted>" in message
