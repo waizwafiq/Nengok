@@ -235,7 +235,7 @@ def test_state_store_records_packaged_migrations(tmp_path: Path) -> None:
         records = applied_migrations(conn)
     finally:
         conn.close()
-    assert [r.version for r in records] == [1]
+    assert [r.version for r in records] == [1, 2]
 
 
 def test_db_status_lists_applied_migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
