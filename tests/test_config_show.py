@@ -1,4 +1,4 @@
-"""Coverage for `nengok config show` and the masking helper it depends on."""
+"""Coverage for `nengok config show`, the masking helper, and the startup banner."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from nengok import cli as cli_module
 from nengok.cli import app
 from nengok.cli_helpers import format_config_for_display, mask_secret
 from nengok.config import NengokConfig
@@ -80,6 +81,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Strip ambient env vars and silence dotenv so the test only sees `tmp_path`."""
     monkeypatch.setattr("nengok.cli.load_dotenv", lambda *args, **kwargs: False)
     monkeypatch.chdir(tmp_path)
+    cli_module._reset_startup_banner_for_tests()
     for env in (
         "PHOENIX_BASE_URL",
         "PHOENIX_API_KEY",
@@ -122,3 +124,48 @@ def test_config_show_exits_2_when_config_invalid(tmp_path: Path, monkeypatch: py
 
     assert result.exit_code == 2
     assert "Phoenix base URL not configured" in result.output
+
+
+def test_startup_banner_emits_once_with_redaction_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_env(monkeypatch, tmp_path)
+    config_path = tmp_path / "config.toml"
+    _write_config(config_path)
+    monkeypatch.setenv("NENGOK_ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("NENGOK_STATE_DB", str(tmp_path / "state.db"))
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "show", "--config-path", str(config_path)])
+
+    assert result.exit_code == 0, result.output
+    banner_lines = [line for line in result.output.splitlines() if "starting (config:" in line]
+    assert len(banner_lines) == 1
+    banner = banner_lines[0]
+    assert "redaction: enabled" in banner
+    assert "phoenix: http://localhost:6006" in banner
+    assert str(config_path) in banner
+    assert SAMPLE_API_KEY not in banner
+
+
+def test_startup_banner_reports_disabled_redaction(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_env(monkeypatch, tmp_path)
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[nengok]\n"
+        'phoenix_base_url = "http://localhost:6006"\n'
+        f'google_api_key = "{SAMPLE_API_KEY}"\n'
+        'project_identifier = "travel-planner-agent"\n'
+        "redaction_enabled = false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NENGOK_ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("NENGOK_STATE_DB", str(tmp_path / "state.db"))
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["config", "show", "--config-path", str(config_path)])
+
+    assert result.exit_code == 0, result.output
+    banner_lines = [line for line in result.output.splitlines() if "starting (config:" in line]
+    assert len(banner_lines) == 1
+    assert "redaction: disabled" in banner_lines[0]
