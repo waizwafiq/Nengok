@@ -28,6 +28,43 @@ from nengok.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+_ALLOWED_RANGE_COLUMNS = frozenset({"created_at", "started_at", "updated_at"})
+
+
+def _range_sql(
+    base_query: str,
+    *,
+    column: str,
+    since: datetime | None,
+    until: datetime | None,
+    order_by: str,
+) -> tuple[str, tuple]:
+    """
+    Append a `WHERE column >= ? AND column < ?` filter and an ORDER BY to `base_query`.
+
+    `column` and `order_by` are author-controlled (the allowlist below
+    rejects anything that did not come from this module), so the f-string
+    composition stays bandit-clean. Every user-supplied value is bound
+    through `params` and never spliced into the SQL.
+    """
+    if column not in _ALLOWED_RANGE_COLUMNS:
+        raise ValueError(f"_range_sql refuses unknown column '{column}'")
+
+    clauses: list[str] = []
+    params: list = []
+    if since is not None:
+        clauses.append(f"{column} >= ?")
+        params.append(since.isoformat())
+    if until is not None:
+        clauses.append(f"{column} < ?")
+        params.append(until.isoformat())
+    sql = base_query.rstrip()
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += f" ORDER BY {order_by}"
+    return sql, tuple(params)
+
+
 class StateStore:
     """Thin SQLite wrapper. Connection-per-call; no pooling required."""
 
@@ -198,6 +235,72 @@ class StateStore:
                 """,
                 (cluster_id,),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_clusters_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        """Return clusters whose `created_at` falls inside the half-open `[since, until)` window."""
+        sql, params = _range_sql(
+            "SELECT * FROM clusters",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, cluster_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_approvals_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            "SELECT approval_id, cluster_id, decision, reviewer, reason, created_at FROM approvals",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, approval_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_experiments_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            """
+            SELECT experiment_id, cluster_id, experiment_name, dataset_name,
+                   baseline_pass_rate, fix_pass_rate,
+                   golden_baseline_pass_rate, golden_fix_pass_rate,
+                   per_case_json, created_at
+            FROM experiments
+            """,
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, row_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_cycles_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            """
+            SELECT cycle_id, started_at, ended_at, gemini_tokens, gemini_dollars
+            FROM cycles
+            """,
+            column="started_at",
+            since=since,
+            until=until,
+            order_by="started_at ASC, cycle_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
     def record_cycle_usage(
