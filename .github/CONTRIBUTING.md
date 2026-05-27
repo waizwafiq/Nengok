@@ -241,6 +241,10 @@ To inspect the resolved config without leaking keys, run `nengok config show`. E
 
 `nengok export --since YYYY-MM-DD --until YYYY-MM-DD > audit.json` writes the clusters, approvals, experiments, cycles, and per-cluster artifact pointers inside the date window as a single JSON bundle. Both bounds are optional and parsed as UTC midnight; `--until` is inclusive of the named day. Output goes to stdout by default so the shell redirect at the end of the command works as written; pass `--output PATH` to write to a file and get a one-line summary on stderr instead. Pass `--format csv` for a two-section CSV (`# clusters` then `# approvals`) that a reviewer can split and import into a spreadsheet. The JSON shape is documented in [docs/audit-export.md](../docs/audit-export.md) and is the seed for the v1.0 EU AI Act audit bundle, so field renames are forbidden once shipped (additions land at the end of their section). Every artifact entry includes a sha256 of each on-disk file so a downstream auditor can verify nothing has been edited since the bundle was produced.
 
+#### Cycle history
+
+Every `nengok run` writes one row to the `cycles` table at cycle end through `StateStore.record_cycle`, even when an unhandled exception escapes the loop. The row carries `status` (`ok`, `over_budget`, `circuit_broken`, or `failed`), `clusters_processed` versus `clusters_discovered`, the Gemini spend, and an `error_message` set from the exception when status is `failed`. The orchestrator wraps `run_once` in a try-block so a Phoenix outage or a Gemini quota error still leaves a record behind. The overview dashboard surfaces the last ten of those rows as a per-cycle spend sparkline and a stacked outcome histogram, so an operator can see "five cycles in a row went over budget" without grepping logs. The same fields land at the end of each `cycles[]` entry in `nengok export` so the audit bundle and the dashboard agree.
+
 ### 7. Launch the dashboard (optional)
 
 ```bash
