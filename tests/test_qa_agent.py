@@ -66,6 +66,10 @@ def test_corpus_includes_anchored_topics() -> None:
 
 
 def test_hallucination_failure_appends_directive_to_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip(
+        "google.genai",
+        reason="google-genai not installed; this test stubs google.genai.Client.",
+    )
     monkeypatch.setenv("GOOGLE_API_KEY", "fake-key-for-test")
     captured: dict[str, str] = {}
 
@@ -93,6 +97,10 @@ def test_hallucination_failure_appends_directive_to_prompt(monkeypatch: pytest.M
 
 
 def test_wrong_attribution_failure_rotates_snippet_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip(
+        "google.genai",
+        reason="google-genai not installed; this test stubs google.genai.Client.",
+    )
     monkeypatch.setenv("GOOGLE_API_KEY", "fake-key-for-test")
     captured: dict[str, str] = {}
 
