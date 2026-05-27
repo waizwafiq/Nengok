@@ -192,18 +192,32 @@ If you would rather start from a documented template and edit by hand instead of
 
 Before the Observer fires, `nengok run` performs an MCP preflight against the configured Phoenix project. If `npx` is on PATH, the check spawns `@arizeai/phoenix-mcp@4.0.13`, calls `list_projects`, and prints a `Heads up: Phoenix project '...' was not found via MCP` line on stderr when the project is missing. The cycle still runs (the warning is best-effort), but the message tells you up front why the Observer is about to return zero spans. Pass `--skip-preflight` to suppress the check; set `NENGOK_MCP_ENABLED=0` to disable it for every run. If `npx` is missing, the preflight downgrades to a debug log and is a no-op.
 
-For projects other than the bundled `travel-planner-agent`, register an agent runner before invoking `nengok run`:
+For projects other than the bundled `travel-planner-agent`, the canonical path is to define a class that satisfies the `AgentRunner` Protocol from `nengok.runners.protocol` and point the config at it:
 
 ```python
-from nengok.runners import register_runner
+# my_pkg/runner.py
+from typing import Any
 
-def my_runner(input_row: dict, prompt: str) -> dict:
-    ...
 
-register_runner("my-phoenix-project", my_runner)
+class MyAgent:
+    @property
+    def name(self) -> str:
+        return "my-agent"
+
+    def run(self, agent_input: dict[str, Any], prompt: str) -> dict[str, Any]:
+        from my_pkg.agent import answer
+
+        return answer(agent_input["query"], system_prompt=prompt)
 ```
 
-The runner is what the Phoenix experiment task calls per dataset row, with the candidate prompt injected so a fix can be A/B'd against the baseline. Without a runner, `run_experiment` raises `RuntimeError: No agent runner registered for project ...`.
+```toml
+# ~/.nengok/config.toml
+agent_runner = "my_pkg.runner:MyAgent"
+```
+
+`nengok run` calls the runner once per dataset row with the candidate prompt injected, so a fix can be A/B'd against the baseline. If the dotted path is wrong or the class is missing `run` / `name`, the orchestrator raises `AgentRunnerLoadError` before the first Phoenix call. Imperative registration via `nengok.runners.register_runner("my-project", callable)` still works for bootstrap modules that prefer it. The longer walk-through lives in [docs/extending.md](../docs/extending.md).
+
+The Fixer's baseline-prompt lookup is also pluggable. The default loader walks the bundled sample-agent file, then Phoenix prompt management, then `config.baseline_prompt_path`. Teams that keep their prompt elsewhere set `baseline_prompt_loader = "my_pkg.loaders:build"` in TOML and ship a factory that returns any object implementing `load(project_name: str) -> str | None`. The three reusable building blocks (`FileLoader`, `PhoenixPromptLoader`, `CompositeLoader`) live in [nengok/core/fixer/loaders.py](../nengok/core/fixer/loaders.py).
 
 After a successful cycle Phoenix will hold two projects: your monitored project plus `nengok-meta-agent`, which stores the four-span trace per cycle (`nengok.cycle` -> `observer` / `diagnoser` / `fixer` / `verifier`) the orchestrator emits via `nengok.utils.tracing`. The meta-tracer needs `arize-phoenix-otel` (already in the `phoenix` extra). When the extra is missing, the spans silently drop and the loop runs as before.
 

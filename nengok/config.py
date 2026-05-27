@@ -77,6 +77,7 @@ class NengokConfig:
 
     project_identifier: str = "default"
     agent_runner: str | None = None
+    agent_runner_kwargs: dict[str, Any] = field(default_factory=dict)
 
     diagnoser_model: str = DIAGNOSER_MODEL
     judge_model: str = JUDGE_MODEL
@@ -91,6 +92,7 @@ class NengokConfig:
     artifacts_dir: Path = field(default_factory=lambda: DEFAULT_ARTIFACTS_DIR)
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
     baseline_prompt_path: Path | None = None
+    baseline_prompt_loader: str = "nengok.core.fixer.loaders:default_loader"
 
     dashboard_host: str = DEFAULT_DASHBOARD_HOST
     dashboard_port: int = DEFAULT_DASHBOARD_PORT
