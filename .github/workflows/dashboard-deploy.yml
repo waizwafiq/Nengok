@@ -81,7 +81,7 @@ jobs:
       - name: Deploy to Cloud Run
         # The service is multi-container (dashboard + Managed Prometheus
         # collector sidecar) with Secret Manager bindings, which cannot be
-        # expressed as `gcloud run deploy` flags — apply the manifest instead.
+        # expressed as `gcloud run deploy` flags, so apply the manifest instead.
         run: |
           gcloud run services replace /tmp/cloud-run.rendered.yaml \
             --region ${{ env.GCP_REGION }} \

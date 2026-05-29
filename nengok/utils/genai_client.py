@@ -4,9 +4,9 @@ Backend-aware construction of the `google-genai` client.
 `google-genai` exposes a single `genai.Client` that talks to either
 Google AI Studio (`api_key=...`) or Vertex AI (`vertexai=True,
 project=..., location=...`, authenticating via Application Default
-Credentials — no API key). Centralizing construction here keeps the
+Credentials, no API key). Centralizing construction here keeps the
 backend choice in one place so every diagnoser/fixer stage and the
-health probe agree, and so Nengok's config — not ambient SDK env vars —
+health probe agree, and so Nengok's config (not ambient SDK env vars)
 stays authoritative.
 
 The Vertex branch always passes `vertexai=True` explicitly rather than
@@ -67,9 +67,7 @@ def build_genai_client(config: NengokConfig, *, role: str) -> Any:
                 role=role,
             )
         location = (
-            config.vertex_location
-            or os.environ.get("GOOGLE_CLOUD_LOCATION")
-            or _DEFAULT_VERTEX_LOCATION
+            config.vertex_location or os.environ.get("GOOGLE_CLOUD_LOCATION") or _DEFAULT_VERTEX_LOCATION
         )
         return genai.Client(vertexai=True, project=project, location=location)
 

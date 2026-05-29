@@ -174,9 +174,7 @@ def _isolate_google_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key, raising=False)
 
 
-def test_check_gemini_reachable_vertex_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_gemini_reachable_vertex_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("google.genai", reason="stubs google.genai.Client")
     _isolate_google_env(monkeypatch)
 

@@ -1,15 +1,15 @@
-# `deploy/` — Cloud Run hosting + GCP integrations
+# `deploy/`: Cloud Run hosting + GCP integrations
 
 Nengok's normal install path is `pip install nengok` plus a local dashboard
 launched via `nengok dashboard`. This directory hosts that same dashboard on
 **Cloud Run** and wires it into the GCP products Nengok has standardized on.
 
-- **`Dockerfile`** — multi-stage build that bakes the Vite frontend into
+- **`Dockerfile`**: multi-stage build that bakes the Vite frontend into
   `nengok/server`'s static mount and runs `nengok dashboard` on `0.0.0.0:8765`.
-- **`cloud-run.yaml`** — Cloud Run service manifest (Knative). Two containers:
+- **`cloud-run.yaml`**: Cloud Run service manifest (Knative). Two containers:
   the dashboard (`app`) and a Managed Prometheus collector (`collector`)
   sidecar. CI substitutes the image reference and project id at deploy time.
-- **`runmonitoring.yaml`** — the scrape config the collector reads (stored in
+- **`runmonitoring.yaml`**: the scrape config the collector reads (stored in
   Secret Manager, mounted at `/etc/rungmp/config.yaml`).
 
 > If you are evaluating Nengok as a user, you can ignore this directory and run
@@ -79,7 +79,7 @@ Vertex authenticates with the runtime service account.
 # Phoenix API key (use your real key, or a placeholder you update later)
 printf %s "$PHOENIX_API_KEY_VALUE" | gcloud secrets create nengok-phoenix-api-key --data-file=-
 
-# Dashboard bearer token — generate a strong random value
+# Dashboard bearer token. Generate a strong random value
 openssl rand -hex 24 | gcloud secrets create nengok-dashboard-token --data-file=-
 
 # Managed Prometheus scrape config
@@ -150,13 +150,13 @@ Locally, set the same env vars or `gemini_use_vertex = true` /
 the default when the flag is off.
 
 **Secret Manager.** `PHOENIX_API_KEY` and `NENGOK_DASHBOARD_AUTH_TOKEN` are
-bound from secrets via `secretKeyRef` — the app keeps reading plain env vars, so
+bound from secrets via `secretKeyRef`. The app keeps reading plain env vars, so
 there is no app-code dependency on Secret Manager. Setting the dashboard token
 makes `/api/v1/*` require `Authorization: Bearer <token>`; `/health` stays
 public for the liveness probe.
 
 **Cloud Logging.** Cloud Run sets `K_SERVICE`, which makes the CLI emit
-Cloud-Logging-parseable JSON (a top-level `severity` field) to stderr — Cloud
+Cloud-Logging-parseable JSON (a top-level `severity` field) to stderr. Cloud
 Run forwards it automatically, no agent required. Override with
 `NENGOK_LOG_FORMAT=text|json|gcp`.
 
@@ -179,7 +179,7 @@ burn (`nengok_gemini_tokens_total`), stage latency
 
 Per the issue #25 discussion, the remaining GCP products are deferred:
 
-- **State persistence (v0.3)** will target **Cloud SQL (PostgreSQL)** — the store
+- **State persistence (v0.3)** will target **Cloud SQL (PostgreSQL)**. The store
   is already relational (clusters, approvals, audit_log with foreign keys and
   versioned migrations), so Postgres is a closer fit than the earlier MongoDB
   idea. Pull it forward only when stateless Cloud Run pods force it.

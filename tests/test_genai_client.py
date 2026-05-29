@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 pytest.importorskip(
@@ -39,10 +41,10 @@ def _install_recording_client(monkeypatch: pytest.MonkeyPatch) -> dict[str, obje
     return captured
 
 
-def _config(**overrides: object) -> NengokConfig:
-    base: dict[str, object] = {"phoenix_base_url": "http://localhost:6006"}
+def _config(**overrides: Any) -> NengokConfig:
+    base: dict[str, Any] = {"phoenix_base_url": "http://localhost:6006"}
     base.update(overrides)
-    return NengokConfig(**base)  # type: ignore[arg-type]
+    return NengokConfig(**base)
 
 
 def test_factory_ai_studio_passes_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

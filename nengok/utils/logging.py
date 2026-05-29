@@ -92,9 +92,9 @@ def configure_logging(
 
     ``log_format`` selects the formatter explicitly: ``"text"`` (human),
     ``"json"`` (the long-standing ``nengok watch`` shape), or ``"gcp"``
-    (Cloud Logging — a top-level ``severity`` field instead of ``level``).
-    When ``log_format`` is None it falls back to ``json_format`` so
-    existing callers keep working.
+    (Cloud Logging, with a top-level ``severity`` field instead of
+    ``level``). When ``log_format`` is None it falls back to
+    ``json_format`` so existing callers keep working.
     """
     if level is not None:
         resolved_level = getattr(logging, level.upper(), logging.INFO)
@@ -133,16 +133,13 @@ def _build_formatter(*, fmt: str) -> logging.Formatter:
                 message_dict: dict[str, Any],
             ) -> None:
                 super().add_fields(log_record, record, message_dict)
-                log_record["severity"] = _GCP_SEVERITY.get(
-                    record.levelname, record.levelname or "DEFAULT"
-                )
+                log_record["severity"] = _GCP_SEVERITY.get(record.levelname, record.levelname or "DEFAULT")
                 log_record.pop("level", None)
                 log_record.pop("levelname", None)
 
         # No asctime: Cloud Run stamps each entry. severity replaces level.
         return _GcpFormatter(
-            "%(name)s %(message)s "
-            "%(run_id)s %(stage)s %(cluster_id)s %(latency_ms)s %(gemini_tokens)s",
+            "%(name)s %(message)s " "%(run_id)s %(stage)s %(cluster_id)s %(latency_ms)s %(gemini_tokens)s",
             rename_fields={"name": "logger"},
         )
 

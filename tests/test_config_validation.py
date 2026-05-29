@@ -64,9 +64,7 @@ def test_vertex_without_project_rejected(tmp_path: Path, monkeypatch: pytest.Mon
         NengokConfig.load(**kwargs)
 
 
-def test_vertex_with_project_passes_without_api_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_vertex_with_project_passes_without_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_env(monkeypatch)
     kwargs = _base_kwargs(tmp_path)
     kwargs["gemini_use_vertex"] = True
@@ -88,9 +86,7 @@ def test_vertex_project_from_env_passes(tmp_path: Path, monkeypatch: pytest.Monk
     assert config.vertex_project == "env-proj"
 
 
-def test_ai_studio_without_api_key_still_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ai_studio_without_api_key_still_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_env(monkeypatch)
     kwargs = _base_kwargs(tmp_path)
     kwargs["gemini_use_vertex"] = False
