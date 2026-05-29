@@ -123,11 +123,11 @@ class TestGenerator:
             return _GeminiCaseList.model_validate_json(_strip_code_fence(retry)).cases
 
     def _default_gemini_call(self, prompt: str) -> str:
-        from google.genai import types
-
         from nengok.utils.genai_client import build_genai_client
 
         client = build_genai_client(self.config, role="Test Generator")
+        from google.genai import types
+
         # response_schema is omitted on purpose: _GeminiCase has dict[str, Any]
         # fields, and Pydantic v2 emits `additionalProperties` for those, which
         # the Gemini Developer API rejects (only Vertex/Enterprise mode accepts

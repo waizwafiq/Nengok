@@ -54,9 +54,11 @@ def build_genai_client(config: NengokConfig, *, role: str) -> Any:
     Credentials. AI Studio mode requires ``GOOGLE_API_KEY`` (config or
     env). ``role`` names the calling stage so a missing-credential error
     points back at the knob the user actually turned.
-    """
-    genai = _import_genai()
 
+    Credentials are checked before ``google-genai`` is imported so the
+    minimal-deps shard (no ``[gemini]`` extra) still surfaces a typed
+    ``MissingApiKeyError`` for a missing key instead of an import error.
+    """
     if config.gemini_use_vertex:
         project = config.vertex_project or os.environ.get("GOOGLE_CLOUD_PROJECT")
         if not project:
@@ -69,6 +71,7 @@ def build_genai_client(config: NengokConfig, *, role: str) -> Any:
         location = (
             config.vertex_location or os.environ.get("GOOGLE_CLOUD_LOCATION") or _DEFAULT_VERTEX_LOCATION
         )
+        genai = _import_genai()
         return genai.Client(vertexai=True, project=project, location=location)
 
     api_key = config.google_api_key or os.environ.get("GOOGLE_API_KEY")
@@ -79,6 +82,7 @@ def build_genai_client(config: NengokConfig, *, role: str) -> Any:
             "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
             role=role,
         )
+    genai = _import_genai()
     return genai.Client(api_key=api_key)
 
 

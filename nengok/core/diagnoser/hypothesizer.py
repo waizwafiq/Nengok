@@ -102,11 +102,11 @@ class Hypothesizer:
             return RootCauseHypothesis.model_validate_json(_strip_code_fence(retry))
 
     def _default_gemini_call(self, prompt: str) -> str:
-        from google.genai import types
-
         from nengok.utils.genai_client import build_genai_client
 
         client = build_genai_client(self.config, role="Hypothesizer")
+        from google.genai import types
+
         return call_gemini(
             client,
             model=self.config.diagnoser_model,
