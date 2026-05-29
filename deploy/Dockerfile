@@ -32,4 +32,6 @@ ENV NENGOK_DASHBOARD_HOST=0.0.0.0 \
 
 EXPOSE 8765
 
-CMD ["nengok", "dashboard", "--host", "0.0.0.0", "--port", "8765", "--no-browser"]
+# Host/port come from NENGOK_DASHBOARD_HOST/PORT (set above). The dashboard
+# command exposes --listen, not --host, so passing --host here would error.
+CMD ["nengok", "dashboard", "--no-browser"]

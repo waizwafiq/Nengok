@@ -71,14 +71,28 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Deploy to Cloud Run
+      - name: Render Cloud Run manifest
         run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image "$IMAGE" \
+          sed -e "s|REPLACED_BY_CI|$IMAGE|g" \
+              -e "s|PROJECT_ID|${{ secrets.GCP_PROJECT_ID }}|g" \
+              deploy/cloud-run.yaml > /tmp/cloud-run.rendered.yaml
+          cat /tmp/cloud-run.rendered.yaml
+
+      - name: Deploy to Cloud Run
+        # The service is multi-container (dashboard + Managed Prometheus
+        # collector sidecar) with Secret Manager bindings, which cannot be
+        # expressed as `gcloud run deploy` flags — apply the manifest instead.
+        run: |
+          gcloud run services replace /tmp/cloud-run.rendered.yaml \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed
+
+      - name: Allow unauthenticated access
+        # `services replace` does not honor --allow-unauthenticated, so the
+        # public-invoker binding is (idempotently) granted via IAM.
+        run: |
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
             --region ${{ env.GCP_REGION }} \
             --platform managed \
-            --allow-unauthenticated \
-            --port 8765 \
-            --memory 1Gi \
-            --cpu 1 \
-            --max-instances 3
+            --member="allUsers" \
+            --role="roles/run.invoker"
