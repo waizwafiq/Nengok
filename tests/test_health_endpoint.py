@@ -14,6 +14,7 @@ from nengok.server.health import (
     DEFAULT_CACHE_TTL_SECONDS,
     HealthChecker,
     check_db_writable,
+    check_gemini_reachable,
 )
 from nengok.server.main import create_app
 
@@ -161,6 +162,69 @@ def test_cached_results_refresh_after_ttl_expires() -> None:
     checker.snapshot(config)
 
     assert phoenix_calls["count"] == 2
+
+
+def _isolate_google_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "GOOGLE_API_KEY",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_check_gemini_reachable_vertex_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("google.genai", reason="stubs google.genai.Client")
+    _isolate_google_env(monkeypatch)
+
+    class _StubClient:
+        def __init__(self, **_kwargs: object) -> None:
+            self.models = self
+
+        def generate_content(self, **_kwargs: object) -> object:
+            return type("_R", (), {"text": "ok", "usage_metadata": None})()
+
+    monkeypatch.setattr("google.genai.Client", _StubClient, raising=False)
+    config = NengokConfig(
+        phoenix_base_url="http://localhost:6006",
+        gemini_use_vertex=True,
+        vertex_project="proj",
+        state_db_path=tmp_path / "state.db",
+    )
+
+    assert check_gemini_reachable(config) is True
+
+
+def test_check_gemini_reachable_vertex_missing_project_is_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_google_env(monkeypatch)
+    config = NengokConfig(
+        phoenix_base_url="http://localhost:6006",
+        gemini_use_vertex=True,
+        vertex_project=None,
+        state_db_path=tmp_path / "state.db",
+    )
+
+    # Factory raises MissingApiKeyError (no project); the probe swallows it.
+    assert check_gemini_reachable(config) is False
+
+
+def test_check_gemini_reachable_ai_studio_without_key_is_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_google_env(monkeypatch)
+    config = NengokConfig(
+        phoenix_base_url="http://localhost:6006",
+        gemini_use_vertex=False,
+        google_api_key=None,
+        state_db_path=tmp_path / "state.db",
+    )
+
+    assert check_gemini_reachable(config) is False
 
 
 def test_db_writable_probe_returns_true_for_writable_path(tmp_path: Path) -> None:

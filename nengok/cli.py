@@ -100,7 +100,16 @@ def main(
     verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Enable debug logging.")] = False,
 ) -> None:
     load_dotenv(override=False)
-    configure_logging(verbose=verbose)
+    # Cloud Run sets K_SERVICE on every revision; emit Cloud-Logging-parseable
+    # JSON (with a `severity` field) there. NENGOK_LOG_FORMAT (text|json|gcp)
+    # overrides the auto-detected default. `run`/`watch` re-configure logging
+    # afterwards from their own --log-format option, so only `dashboard`
+    # (which never re-configures) inherits this on Cloud Run.
+    default_fmt = "gcp" if os.environ.get("K_SERVICE") else "text"
+    configure_logging(
+        verbose=verbose,
+        log_format=os.environ.get("NENGOK_LOG_FORMAT", default_fmt),
+    )
 
 
 @app.command()
@@ -453,7 +462,25 @@ def dashboard(
         url = f"http://{bind_host}:{port}"
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
-    uvicorn.run(fastapi_app, host=bind_host, port=port, log_level="info")
+    # Route uvicorn's own access/error logs through the root logger so they
+    # share Nengok's formatter (including the gcp `severity` formatter on
+    # Cloud Run) and pass through the redaction filter.
+    uvicorn_log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "uvicorn": {"handlers": [], "level": "INFO", "propagate": True},
+            "uvicorn.error": {"handlers": [], "level": "INFO", "propagate": True},
+            "uvicorn.access": {"handlers": [], "level": "INFO", "propagate": True},
+        },
+    }
+    uvicorn.run(
+        fastapi_app,
+        host=bind_host,
+        port=port,
+        log_level="info",
+        log_config=uvicorn_log_config,
+    )
 
 
 _LOCAL_BIND_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})

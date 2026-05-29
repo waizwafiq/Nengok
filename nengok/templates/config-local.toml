@@ -26,6 +26,22 @@ phoenix_base_url = "http://localhost:6006"
 # in the environment if you would rather not commit the key to disk.
 # google_api_key = "AIza..."
 
+# --- Gemini backend: AI Studio (default) or Vertex AI ------------------------
+
+# Route Gemini through Vertex AI instead of AI Studio. When true, Nengok uses
+# Application Default Credentials (run `gcloud auth application-default login`,
+# or the Cloud Run service account when hosted) and ignores google_api_key.
+# Equivalent env var: GOOGLE_GENAI_USE_VERTEXAI.
+# gemini_use_vertex = false
+
+# GCP project for Vertex AI. Required when gemini_use_vertex = true (or set
+# GOOGLE_CLOUD_PROJECT in the environment). Env: GOOGLE_CLOUD_PROJECT.
+# vertex_project = "my-gcp-project"
+
+# Vertex AI location. "global" serves the current Gemini models; override to a
+# region (e.g. "us-central1") for data residency. Env: GOOGLE_CLOUD_LOCATION.
+# vertex_location = "global"
+
 # --- Project + monitored agent -----------------------------------------------
 
 # Phoenix project the Observer pulls spans from. The bundled sample

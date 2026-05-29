@@ -122,21 +122,19 @@ def check_phoenix_reachable(
 
 
 def check_gemini_reachable(config: NengokConfig) -> bool:
-    if not config.google_api_key:
-        return False
     try:
-        from google import genai
-    except ImportError as exc:
-        logger.debug("gemini health probe skipped, google-genai not installed: %s", exc)
-        return False
-    try:
-        client = genai.Client(api_key=config.google_api_key)
+        from nengok.utils.genai_client import build_genai_client
+
+        client = build_genai_client(config, role="health check")
         client.models.generate_content(
             model=GEMINI_HEALTH_MODEL,
             contents="ping",
             config={"max_output_tokens": 1},
         )
     except Exception as exc:
+        # Covers a missing credential (MissingApiKeyError), an absent
+        # google-genai install (OptionalDependencyError), and any
+        # transport/auth failure from the ping itself.
         logger.debug("gemini health probe failed: %s", exc)
         return False
     return True

@@ -31,3 +31,31 @@ def test_env_provides_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     monkeypatch.setenv("GOOGLE_API_KEY", "AIzaTEST")
     config = NengokConfig.load(config_path=tmp_path / "missing.toml")
     assert config.phoenix_base_url == "http://from-env"
+
+
+def test_env_parses_vertex_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "vtx-proj")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    config = NengokConfig.load(config_path=tmp_path / "missing.toml")
+    assert config.gemini_use_vertex is True
+    assert config.vertex_project == "vtx-proj"
+    assert config.vertex_location == "us-central1"
+
+
+def test_env_vertex_flag_false_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaTEST")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "0")
+    config = NengokConfig.load(config_path=tmp_path / "missing.toml")
+    assert config.gemini_use_vertex is False
+
+
+def test_env_parses_metrics_enabled(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaTEST")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "false")
+    monkeypatch.setenv("NENGOK_METRICS_ENABLED", "true")
+    config = NengokConfig.load(config_path=tmp_path / "missing.toml")
+    assert config.metrics_enabled is True

@@ -35,6 +35,17 @@ _REDACTION_PATTERN = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[=:]\s*(?:bearer\s+)?\S+"
 )
 
+# Python logging level name -> Google Cloud Logging `severity` enum. The
+# standard level names already match the GCP enum; NOTSET maps to DEFAULT.
+_GCP_SEVERITY = {
+    "CRITICAL": "CRITICAL",
+    "ERROR": "ERROR",
+    "WARNING": "WARNING",
+    "INFO": "INFO",
+    "DEBUG": "DEBUG",
+    "NOTSET": "DEFAULT",
+}
+
 
 class _ContextFilter(logging.Filter):
     """Attach contextvars to every record so the formatter can render them."""
@@ -73,16 +84,27 @@ def configure_logging(
     *,
     verbose: bool = False,
     json_format: bool = False,
+    log_format: str | None = None,
     level: str | None = None,
 ) -> None:
-    """Install root-logger handlers; calling again replaces them."""
+    """
+    Install root-logger handlers; calling again replaces them.
+
+    ``log_format`` selects the formatter explicitly: ``"text"`` (human),
+    ``"json"`` (the long-standing ``nengok watch`` shape), or ``"gcp"``
+    (Cloud Logging — a top-level ``severity`` field instead of ``level``).
+    When ``log_format`` is None it falls back to ``json_format`` so
+    existing callers keep working.
+    """
     if level is not None:
         resolved_level = getattr(logging, level.upper(), logging.INFO)
     else:
         resolved_level = logging.DEBUG if verbose else logging.INFO
 
+    fmt = (log_format or ("json" if json_format else "text")).strip().lower()
+
     handler = logging.StreamHandler(stream=sys.stderr)
-    handler.setFormatter(_build_formatter(json_format=json_format))
+    handler.setFormatter(_build_formatter(fmt=fmt))
     handler.addFilter(_ContextFilter())
     handler.addFilter(_RedactingFilter())
 
@@ -97,8 +119,34 @@ def configure_logging(
     _CONFIGURED = True
 
 
-def _build_formatter(*, json_format: bool) -> logging.Formatter:
-    if json_format:
+def _build_formatter(*, fmt: str) -> logging.Formatter:
+    if fmt == "gcp":
+        from pythonjsonlogger.json import JsonFormatter
+
+        class _GcpFormatter(JsonFormatter):
+            """Emit Cloud Logging's ``severity`` special field, not ``level``."""
+
+            def add_fields(
+                self,
+                log_record: dict[str, Any],
+                record: logging.LogRecord,
+                message_dict: dict[str, Any],
+            ) -> None:
+                super().add_fields(log_record, record, message_dict)
+                log_record["severity"] = _GCP_SEVERITY.get(
+                    record.levelname, record.levelname or "DEFAULT"
+                )
+                log_record.pop("level", None)
+                log_record.pop("levelname", None)
+
+        # No asctime: Cloud Run stamps each entry. severity replaces level.
+        return _GcpFormatter(
+            "%(name)s %(message)s "
+            "%(run_id)s %(stage)s %(cluster_id)s %(latency_ms)s %(gemini_tokens)s",
+            rename_fields={"name": "logger"},
+        )
+
+    if fmt == "json":
         from pythonjsonlogger.json import JsonFormatter
 
         return JsonFormatter(
@@ -110,6 +158,7 @@ def _build_formatter(*, json_format: bool) -> logging.Formatter:
                 "name": "logger",
             },
         )
+
     return logging.Formatter(
         fmt="%(asctime)s %(levelname)-7s %(name)s :: %(message)s",
         datefmt="%H:%M:%S",
