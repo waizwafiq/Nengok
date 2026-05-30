@@ -1,0 +1,20 @@
+# Google Cloud Managed Service for Prometheus scrape config for the Cloud Run
+# sidecar collector. Stored as the Secret Manager secret `nengok-gmp-config`
+# and mounted into the collector at /etc/rungmp/config.yaml.
+#
+# The sidecar scrapes the dashboard container on localhost:8765/metrics (the
+# same port the app listens on) and writes the series to Cloud Monitoring under
+# the prometheus.googleapis.com/* namespace.
+#
+# Create / update the secret with:
+#   gcloud secrets create nengok-gmp-config --data-file=deploy/runmonitoring.yaml
+#   gcloud secrets versions add nengok-gmp-config --data-file=deploy/runmonitoring.yaml
+apiVersion: monitoring.googleapis.com/v1beta
+kind: RunMonitoring
+metadata:
+  name: nengok-dashboard
+spec:
+  endpoints:
+    - port: 8765
+      path: /metrics
+      interval: 30s

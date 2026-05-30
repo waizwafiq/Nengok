@@ -38,14 +38,6 @@ def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
     baseline. The Phoenix experiment runner uses this to compare a
     candidate fix against the on-disk prompt without touching the file.
     """
-    try:
-        from google import genai
-    except ImportError as exc:
-        raise RuntimeError(
-            "google-genai is not installed; the sample agent needs it to call Gemini. "
-            'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
-        ) from exc
-
     flights_data: object
     hotels_error: str | None = None
     try:
@@ -71,7 +63,9 @@ def build_itinerary(query: str, *, prompt: str | None = None) -> dict:
         "returned an unexpected schema, unit, or error, flag it explicitly."
     )
 
-    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    from nengok.utils.genai_client import build_genai_client_from_env
+
+    client = build_genai_client_from_env()
     itinerary = call_gemini(
         client,
         model=os.environ.get("SAMPLE_AGENT_MODEL", DEFAULT_MODEL),

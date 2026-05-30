@@ -30,6 +30,24 @@ def json_handler() -> Iterator[io.StringIO]:
         root.setLevel(prior_level)
 
 
+@pytest.fixture
+def gcp_handler() -> Iterator[io.StringIO]:
+    buffer = io.StringIO()
+    root = logging.getLogger()
+    prior_handlers = root.handlers[:]
+    prior_level = root.level
+
+    configure_logging(log_format="gcp", level="DEBUG")
+    handler = root.handlers[0]
+    handler.stream = buffer
+
+    try:
+        yield buffer
+    finally:
+        root.handlers = prior_handlers
+        root.setLevel(prior_level)
+
+
 def _last_json_line(buffer: io.StringIO) -> dict[str, object]:
     lines = [line for line in buffer.getvalue().splitlines() if line.strip()]
     return json.loads(lines[-1])
@@ -90,3 +108,30 @@ def test_redacting_filter_scrubs_bearer_token_arg(json_handler: io.StringIO) -> 
     record = _last_json_line(json_handler)
     assert "abc123" not in record["message"]
     assert "authorization=<redacted>" in record["message"]
+
+
+def test_gcp_format_emits_severity_not_level(gcp_handler: io.StringIO) -> None:
+    logger = get_logger("nengok.test")
+    logger.warning("watch out")
+    record = _last_json_line(gcp_handler)
+
+    assert record["severity"] == "WARNING"
+    assert record["message"] == "watch out"
+    assert record["logger"] == "nengok.test"
+    assert "level" not in record
+    assert "levelname" not in record
+
+
+def test_gcp_format_maps_info_severity(gcp_handler: io.StringIO) -> None:
+    logger = get_logger("nengok.test")
+    logger.info("hello")
+    record = _last_json_line(gcp_handler)
+    assert record["severity"] == "INFO"
+
+
+def test_gcp_format_still_redacts_secrets(gcp_handler: io.StringIO) -> None:
+    logger = get_logger("nengok.test")
+    logger.info("token=Bearer sekret-value-123")
+    record = _last_json_line(gcp_handler)
+    assert "sekret-value-123" not in record["message"]
+    assert "token=<redacted>" in record["message"]

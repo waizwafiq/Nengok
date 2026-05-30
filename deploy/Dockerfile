@@ -24,12 +24,16 @@ COPY sample_agent/ ./sample_agent/
 COPY --from=frontend /frontend/dist ./nengok/server/static
 
 ENV NENGOK_SKIP_FRONTEND_BUILD=1
+# `gemini` pulls google-genai so the dashboard's /health Gemini probe works and
+# the image can route Gemini through Vertex AI (ADC) when deployed.
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir ".[phoenix,server]"
+    && pip install --no-cache-dir ".[phoenix,server,gemini]"
 
 ENV NENGOK_DASHBOARD_HOST=0.0.0.0 \
     NENGOK_DASHBOARD_PORT=8765
 
 EXPOSE 8765
 
-CMD ["nengok", "dashboard", "--host", "0.0.0.0", "--port", "8765", "--no-browser"]
+# Host/port come from NENGOK_DASHBOARD_HOST/PORT (set above). The dashboard
+# command exposes --listen, not --host, so passing --host here would error.
+CMD ["nengok", "dashboard", "--no-browser"]

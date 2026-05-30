@@ -143,14 +143,6 @@ def answer_question(
     at least one of them. Returns the structured trace payload that
     Phoenix sees on the LLM span.
     """
-    try:
-        from google import genai
-    except ImportError as exc:
-        raise RuntimeError(
-            "google-genai is not installed; the QA agent needs it to call Gemini. "
-            'Reinstall with: pip install -e ".[dev,phoenix,gemini]"'
-        ) from exc
-
     snippets = retrieve(question, drop_context=(failure == "retriever"))
     if failure == "wrong_attribution":
         snippets = _swap_attributions(snippets)
@@ -162,7 +154,9 @@ def answer_question(
     rendered_snippets = "\n".join(f"[{sid}] {body}" for sid, body in snippets) or "(none)"
     user_prompt = f"Question: {question}\n\n--- SNIPPETS ---\n{rendered_snippets}\n--- END SNIPPETS ---"
 
-    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    from nengok.utils.genai_client import build_genai_client_from_env
+
+    client = build_genai_client_from_env()
     answer = call_gemini(
         client,
         model=os.environ.get("QA_AGENT_MODEL", DEFAULT_MODEL),

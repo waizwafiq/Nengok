@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,3 +43,20 @@ def test_metrics_endpoint_returns_prometheus_text(base_config: NengokConfig) -> 
     body = response.text
     assert "nengok_cycles_total" in body
     assert "nengok_gemini_tokens_total" in body
+
+
+def test_metrics_enabled_via_env_var(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
+    monkeypatch.setenv("GOOGLE_API_KEY", "AIzaTEST")
+    monkeypatch.setenv("NENGOK_METRICS_ENABLED", "true")
+
+    config = NengokConfig.load(
+        config_path=tmp_path / "missing.toml",
+        artifacts_dir=tmp_path / "artifacts",
+        state_db_path=tmp_path / "state.db",
+    )
+
+    assert config.metrics_enabled is True
+    client = TestClient(create_app(config=config))
+    assert client.get("/metrics").status_code == 200

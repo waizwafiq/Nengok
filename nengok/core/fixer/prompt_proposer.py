@@ -11,7 +11,6 @@ the whole prompt.
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ from nengok.core.fixer.loaders import (
 )
 from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, PromptProposal, TraceSpan
-from nengok.errors import BaselinePromptError, MissingApiKeyError
+from nengok.errors import BaselinePromptError
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.utils.gemini import RetryPolicy, call_gemini
 from nengok.utils.logging import get_logger
@@ -143,18 +142,11 @@ class PromptProposer:
             return _GeminiProposal.model_validate_json(_strip_code_fence(retry))
 
     def _default_gemini_call(self, prompt: str) -> str:
-        api_key = self.config.google_api_key or os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise MissingApiKeyError(
-                "Prompt Proposer needs a Gemini API key. Set `GOOGLE_API_KEY` in your "
-                'environment (or `.env`), or write `google_api_key = "..."` into '
-                "`~/.nengok/config.toml`. Get a key at https://aistudio.google.com/app/apikey.",
-                role="Prompt Proposer",
-            )
-        from google import genai
+        from nengok.utils.genai_client import build_genai_client
+
+        client = build_genai_client(self.config, role="Prompt Proposer")
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
         return call_gemini(
             client,
             model=self.config.diagnoser_model,

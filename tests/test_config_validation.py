@@ -23,6 +23,9 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PHOENIX_BASE_URL",
         "PHOENIX_API_KEY",
         "GOOGLE_API_KEY",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
         "NENGOK_PROJECT",
         "NENGOK_BASELINE_PROMPT_PATH",
     ):
@@ -50,6 +53,46 @@ def test_missing_google_api_key_raises_with_actionable_hint(
     message = str(exc_info.value)
     assert "GOOGLE_API_KEY" in message
     assert "aistudio.google.com/app/apikey" in message
+
+
+def test_vertex_without_project_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_env(monkeypatch)
+    kwargs = _base_kwargs(tmp_path)
+    kwargs["gemini_use_vertex"] = True
+    kwargs["google_api_key"] = None
+    with pytest.raises(ConfigError, match="project"):
+        NengokConfig.load(**kwargs)
+
+
+def test_vertex_with_project_passes_without_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_env(monkeypatch)
+    kwargs = _base_kwargs(tmp_path)
+    kwargs["gemini_use_vertex"] = True
+    kwargs["vertex_project"] = "my-proj"
+    kwargs["google_api_key"] = None
+    config = NengokConfig.load(**kwargs)
+    assert config.gemini_use_vertex is True
+    assert config.vertex_project == "my-proj"
+    assert config.google_api_key is None
+
+
+def test_vertex_project_from_env_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-proj")
+    kwargs = _base_kwargs(tmp_path)
+    kwargs["gemini_use_vertex"] = True
+    kwargs["google_api_key"] = None
+    config = NengokConfig.load(**kwargs)
+    assert config.vertex_project == "env-proj"
+
+
+def test_ai_studio_without_api_key_still_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _isolate_env(monkeypatch)
+    kwargs = _base_kwargs(tmp_path)
+    kwargs["gemini_use_vertex"] = False
+    kwargs["google_api_key"] = None
+    with pytest.raises(ConfigError, match="GOOGLE_API_KEY"):
+        NengokConfig.load(**kwargs)
 
 
 def test_malformed_phoenix_url_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

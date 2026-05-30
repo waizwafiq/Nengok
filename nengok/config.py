@@ -35,6 +35,11 @@ DEFAULT_STATE_DB = Path.home() / ".nengok" / "state.db"
 DIAGNOSER_MODEL = "gemini-3.1-pro-preview"
 JUDGE_MODEL = "gemini-3-flash-preview"
 
+# Gemini backend: AI Studio (api key) by default, or Vertex AI (ADC). "global"
+# serves the current preview Gemini model families on Vertex.
+DEFAULT_GEMINI_USE_VERTEX = False
+DEFAULT_VERTEX_LOCATION = "global"
+
 DEFAULT_SPAN_LIMIT = 200
 DEFAULT_MIN_CLUSTER_SIZE = 3
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
@@ -74,6 +79,10 @@ class NengokConfig:
     phoenix_base_url: str
     phoenix_api_key: str | None = None
     google_api_key: str | None = None
+
+    gemini_use_vertex: bool = DEFAULT_GEMINI_USE_VERTEX
+    vertex_project: str | None = None
+    vertex_location: str = DEFAULT_VERTEX_LOCATION
 
     project_identifier: str = "default"
     agent_runner: str | None = None
@@ -164,7 +173,15 @@ class NengokConfig:
         Surfaces missing secrets, malformed URLs, unreadable files, and
         out-of-range thresholds as `ConfigError` with a copy-paste hint.
         """
-        if not self.google_api_key:
+        if self.gemini_use_vertex:
+            if not (self.vertex_project or os.environ.get("GOOGLE_CLOUD_PROJECT")):
+                raise ConfigError(
+                    "gemini_use_vertex is true but no GCP project is set. "
+                    'Add `vertex_project = "<project-id>"` to ~/.nengok/config.toml '
+                    "or export GOOGLE_CLOUD_PROJECT, then authenticate with "
+                    "`gcloud auth application-default login`."
+                )
+        elif not self.google_api_key:
             raise ConfigError(
                 "GOOGLE_API_KEY is not set. "
                 "Run `export GOOGLE_API_KEY=<your key>` or add "
@@ -246,6 +263,9 @@ def _read_env() -> dict[str, Any]:
         "PHOENIX_BASE_URL": "phoenix_base_url",
         "PHOENIX_API_KEY": "phoenix_api_key",
         "GOOGLE_API_KEY": "google_api_key",
+        "GOOGLE_GENAI_USE_VERTEXAI": "gemini_use_vertex",
+        "GOOGLE_CLOUD_PROJECT": "vertex_project",
+        "GOOGLE_CLOUD_LOCATION": "vertex_location",
         "NENGOK_PROJECT": "project_identifier",
         "NENGOK_DIAGNOSER_MODEL": "diagnoser_model",
         "NENGOK_JUDGE_MODEL": "judge_model",
@@ -261,6 +281,7 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_MCP_PACKAGE": "mcp_package",
         "NENGOK_REDACTION_ENABLED": "redaction_enabled",
         "NENGOK_REDACTOR_CALLABLE": "redactor_callable",
+        "NENGOK_METRICS_ENABLED": "metrics_enabled",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
@@ -269,7 +290,12 @@ def _read_env() -> dict[str, Any]:
             continue
         if config_key == "dashboard_port":
             out[config_key] = int(value)
-        elif config_key in {"mcp_enabled", "redaction_enabled"}:
+        elif config_key in {
+            "mcp_enabled",
+            "redaction_enabled",
+            "gemini_use_vertex",
+            "metrics_enabled",
+        }:
             out[config_key] = _parse_bool(value)
         elif config_key == "dashboard_cors_origins":
             out[config_key] = [item.strip() for item in value.split(",") if item.strip()]
