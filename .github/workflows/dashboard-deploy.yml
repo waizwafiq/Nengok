@@ -29,13 +29,18 @@ jobs:
         id: gate
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          # Pass the head-commit message via env, never via `${{ ... }}`
+          # interpolation into the script. Squash-merge commit messages are
+          # multi-line and frequently contain code fragments; inlining them
+          # into a bash heredoc executes those fragments as shell commands
+          # (and is a script-injection vector).
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          if echo "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
-            echo "Skipping deploy — docs-only commit"
+          if printf '%s\n' "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
+            echo "Skipping deploy (docs-only commit)"
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
           elif [ -z "$GCP_PROJECT_ID" ]; then
-            echo "GCP_PROJECT_ID secret not configured — skipping deploy"
+            echo "GCP_PROJECT_ID secret not configured, skipping deploy"
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
