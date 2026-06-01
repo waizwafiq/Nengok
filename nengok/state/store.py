@@ -1,10 +1,12 @@
 """
 SQLite-backed persistence for cluster lifecycle and span deduplication.
 
-We deliberately stay on `sqlite3` (stdlib) — no SQLAlchemy, no Alembic.
-The schema is tiny, the volume is tiny, and dragging in a full ORM for
-a local SDK is exactly the kind of premature complexity the project
-rules forbid.
+The schema lives in dialect-portable Alembic revisions under
+`nengok/state/alembic/versions/`. Every table is prefixed `nengok_` so
+it cannot collide with the operator's existing schema when Nengok
+shares a database with their application. The raw `sqlite3` driver
+remains here in transition; the relational store will move to
+SQLAlchemy Core in a later Phase 14 subphase.
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import create_engine
+
 from nengok.core.types import (
     AnomalousSpan,
     Cluster,
@@ -24,11 +28,7 @@ from nengok.core.types import (
     CycleRecord,
     ExperimentResult,
 )
-from nengok.state.migrator import (
-    apply_pending,
-    discover_migrations,
-    packaged_migrations_source,
-)
+from nengok.state.alembic_runner import upgrade_head
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -81,16 +81,18 @@ class StateStore:
 
     def _initialize(self) -> None:
         """
-        Apply every pending migration inside one transaction.
+        Apply every pending Alembic revision against the local SQLite file.
 
-        Discovery uses `importlib.resources` so the migrations directory
-        works for an editable install, a wheel install, and a zipapp.
-        Migration ordering, checksum verification, and the
-        `schema_versions` bookkeeping live in `nengok.state.migrator`.
+        The store builds a short-lived SQLAlchemy engine to drive
+        `alembic upgrade head` and disposes it immediately. The raw
+        `sqlite3` connection used by every other method on this class
+        is unaffected.
         """
-        migrations = discover_migrations(packaged_migrations_source())
-        with self._connect() as conn:
-            apply_pending(conn, migrations)
+        engine = create_engine(f"sqlite:///{self._db_path.as_posix()}")
+        try:
+            upgrade_head(engine)
+        finally:
+            engine.dispose()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -112,11 +114,11 @@ class StateStore:
         with self._connect() as conn:
             for anomaly in anomalies:
                 span_id = anomaly.span.span_id
-                row = conn.execute("SELECT 1 FROM seen_spans WHERE span_id = ?", (span_id,)).fetchone()
+                row = conn.execute("SELECT 1 FROM nengok_seen_spans WHERE span_id = ?", (span_id,)).fetchone()
                 if row is not None:
                     continue
                 conn.execute(
-                    "INSERT INTO seen_spans (span_id, cluster_id, first_seen) VALUES (?, NULL, ?)",
+                    "INSERT INTO nengok_seen_spans (span_id, cluster_id, first_seen) VALUES (?, NULL, ?)",
                     (span_id, now),
                 )
                 new.append(anomaly)
@@ -130,7 +132,7 @@ class StateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO clusters
+                INSERT INTO nengok_clusters
                   (cluster_id, name, description, status, hypothesis_json, member_spans_json,
                    created_at, updated_at, first_seen, diagnosed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -141,8 +143,8 @@ class StateStore:
                     hypothesis_json = excluded.hypothesis_json,
                     member_spans_json = excluded.member_spans_json,
                     updated_at = excluded.updated_at,
-                    first_seen = COALESCE(clusters.first_seen, excluded.first_seen),
-                    diagnosed_at = COALESCE(clusters.diagnosed_at, excluded.diagnosed_at)
+                    first_seen = COALESCE(nengok_clusters.first_seen, excluded.first_seen),
+                    diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at)
                 """,
                 (
                     cluster.cluster_id,
@@ -164,7 +166,7 @@ class StateStore:
             if status is ClusterStatus.DIAGNOSED:
                 conn.execute(
                     """
-                    UPDATE clusters
+                    UPDATE nengok_clusters
                     SET status = ?, updated_at = ?, diagnosed_at = COALESCE(diagnosed_at, ?)
                     WHERE cluster_id = ?
                     """,
@@ -172,12 +174,12 @@ class StateStore:
                 )
             else:
                 conn.execute(
-                    "UPDATE clusters SET status = ?, updated_at = ? WHERE cluster_id = ?",
+                    "UPDATE nengok_clusters SET status = ?, updated_at = ? WHERE cluster_id = ?",
                     (status.value, now, cluster_id),
                 )
 
     def list_clusters(self, *, status: ClusterStatus | None = None) -> list[dict]:
-        query = "SELECT * FROM clusters"
+        query = "SELECT * FROM nengok_clusters"
         params: tuple = ()
         if status is not None:
             query += " WHERE status = ?"
@@ -196,7 +198,8 @@ class StateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO approvals (approval_id, cluster_id, decision, reviewer, created_at, reason)
+                INSERT INTO nengok_approvals
+                  (approval_id, cluster_id, decision, reviewer, created_at, reason)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (approval_id, cluster_id, decision, reviewer, now, reason),
@@ -214,13 +217,13 @@ class StateStore:
         """
         sql = """
             SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
-            FROM approvals
+            FROM nengok_approvals
         """
         params: tuple = ()
         if before is not None:
             sql += """
                 WHERE (created_at, approval_id) < (
-                    SELECT created_at, approval_id FROM approvals WHERE approval_id = ?
+                    SELECT created_at, approval_id FROM nengok_approvals WHERE approval_id = ?
                 )
             """
             params = (before,)
@@ -235,7 +238,7 @@ class StateStore:
             rows = conn.execute(
                 """
                 SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
-                FROM approvals
+                FROM nengok_approvals
                 WHERE cluster_id = ?
                 ORDER BY created_at DESC, approval_id DESC
                 """,
@@ -248,7 +251,7 @@ class StateStore:
     ) -> list[dict]:
         """Return clusters whose `created_at` falls inside the half-open `[since, until)` window."""
         sql, params = _range_sql(
-            "SELECT * FROM clusters",
+            "SELECT * FROM nengok_clusters",
             column="created_at",
             since=since,
             until=until,
@@ -262,7 +265,7 @@ class StateStore:
         self, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[dict]:
         sql, params = _range_sql(
-            "SELECT approval_id, cluster_id, decision, reviewer, reason, created_at FROM approvals",
+            "SELECT approval_id, cluster_id, decision, reviewer, reason, created_at " "FROM nengok_approvals",
             column="created_at",
             since=since,
             until=until,
@@ -281,7 +284,7 @@ class StateStore:
                    baseline_pass_rate, fix_pass_rate,
                    golden_baseline_pass_rate, golden_fix_pass_rate,
                    per_case_json, created_at
-            FROM experiments
+            FROM nengok_experiments
             """,
             column="created_at",
             since=since,
@@ -300,7 +303,7 @@ class StateStore:
             SELECT cycle_id, started_at, ended_at, status,
                    clusters_processed, clusters_discovered,
                    gemini_tokens, gemini_dollars, error_message
-            FROM cycles
+            FROM nengok_cycles
             """,
             column="started_at",
             since=since,
@@ -319,7 +322,7 @@ class StateStore:
                 SELECT cycle_id, started_at, ended_at, status,
                        clusters_processed, clusters_discovered,
                        gemini_tokens, gemini_dollars, error_message
-                FROM cycles
+                FROM nengok_cycles
                 ORDER BY started_at DESC, cycle_id DESC
                 LIMIT ?
                 """,
@@ -332,7 +335,7 @@ class StateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO cycles
+                INSERT INTO nengok_cycles
                   (cycle_id, started_at, ended_at, status,
                    clusters_processed, clusters_discovered,
                    gemini_tokens, gemini_dollars, error_message)
@@ -364,7 +367,7 @@ class StateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO experiments
+                INSERT INTO nengok_experiments
                   (experiment_id, cluster_id, experiment_name, dataset_name,
                    baseline_pass_rate, fix_pass_rate,
                    golden_baseline_pass_rate, golden_fix_pass_rate,
@@ -389,7 +392,7 @@ class StateStore:
         """Aggregated metrics for the executive dashboard panel."""
         with self._connect() as conn:
             status_rows = conn.execute(
-                "SELECT status, COUNT(*) AS n FROM clusters GROUP BY status"
+                "SELECT status, COUNT(*) AS n FROM nengok_clusters GROUP BY status"
             ).fetchall()
             by_status: dict[str, int] = {row["status"]: row["n"] for row in status_rows}
             approved = by_status.get(ClusterStatus.APPROVED.value, 0)
@@ -404,7 +407,7 @@ class StateStore:
                 SELECT AVG(
                     (julianday(diagnosed_at) - julianday(first_seen)) * 86400.0
                 ) AS seconds
-                FROM clusters
+                FROM nengok_clusters
                 WHERE first_seen IS NOT NULL AND diagnosed_at IS NOT NULL
                 """
             ).fetchone()
@@ -413,8 +416,8 @@ class StateStore:
                 SELECT AVG(
                     (julianday(a.created_at) - julianday(c.diagnosed_at)) * 86400.0
                 ) AS seconds
-                FROM clusters c
-                JOIN approvals a ON a.cluster_id = c.cluster_id
+                FROM nengok_clusters c
+                JOIN nengok_approvals a ON a.cluster_id = c.cluster_id
                 WHERE a.decision = 'approved' AND c.diagnosed_at IS NOT NULL
                 """
             ).fetchone()
@@ -422,9 +425,9 @@ class StateStore:
             regression_row = conn.execute(
                 """
                 SELECT COALESCE(SUM(json_array_length(per_case_json)), 0) AS total
-                FROM experiments
+                FROM nengok_experiments
                 WHERE row_id IN (
-                    SELECT MAX(row_id) FROM experiments GROUP BY cluster_id
+                    SELECT MAX(row_id) FROM nengok_experiments GROUP BY cluster_id
                 )
                 """
             ).fetchone()
@@ -432,7 +435,7 @@ class StateStore:
             pass_row = conn.execute(
                 """
                 SELECT AVG(fix_pass_rate) AS pass_rate
-                FROM experiments
+                FROM nengok_experiments
                 WHERE created_at >= datetime('now', '-30 days')
                 """
             ).fetchone()
@@ -442,7 +445,7 @@ class StateStore:
                 SELECT
                     COALESCE(SUM(gemini_tokens), 0) AS tokens,
                     COALESCE(SUM(gemini_dollars), 0.0) AS dollars
-                FROM cycles
+                FROM nengok_cycles
                 WHERE started_at >= datetime('now', '-30 days')
                 """
             ).fetchone()
@@ -453,7 +456,7 @@ class StateStore:
                     DATE(started_at) AS day,
                     COALESCE(SUM(gemini_tokens), 0) AS tokens,
                     COALESCE(SUM(gemini_dollars), 0.0) AS dollars
-                FROM cycles
+                FROM nengok_cycles
                 WHERE started_at >= datetime('now', '-30 days')
                 GROUP BY DATE(started_at)
                 ORDER BY day ASC
@@ -465,7 +468,7 @@ class StateStore:
                 SELECT cycle_id, started_at, ended_at, status,
                        clusters_processed, clusters_discovered,
                        gemini_tokens, gemini_dollars, error_message
-                FROM cycles
+                FROM nengok_cycles
                 ORDER BY started_at DESC, cycle_id DESC
                 LIMIT 10
                 """
@@ -527,7 +530,7 @@ class StateStore:
                        baseline_pass_rate, fix_pass_rate,
                        golden_baseline_pass_rate, golden_fix_pass_rate,
                        per_case_json, created_at
-                FROM experiments
+                FROM nengok_experiments
                 WHERE cluster_id = ?
                 ORDER BY created_at DESC, row_id DESC
                 LIMIT 1

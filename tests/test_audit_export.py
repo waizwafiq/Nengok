@@ -92,7 +92,8 @@ def _approve(
     conn = sqlite3.connect(store._db_path)
     try:
         conn.execute(
-            "INSERT INTO approvals (approval_id, cluster_id, decision, reviewer, created_at, reason)"
+            "INSERT INTO nengok_approvals"
+            " (approval_id, cluster_id, decision, reviewer, created_at, reason)"
             " VALUES (?, ?, ?, ?, ?, ?)",
             (approval_id, cluster_id, "approved", reviewer, created_at.isoformat(), reason),
         )
@@ -128,7 +129,8 @@ def _experiment(
     conn = sqlite3.connect(store._db_path)
     try:
         conn.execute(
-            "INSERT INTO experiments (experiment_id, cluster_id, experiment_name, dataset_name,"
+            "INSERT INTO nengok_experiments"
+            " (experiment_id, cluster_id, experiment_name, dataset_name,"
             " baseline_pass_rate, fix_pass_rate, golden_baseline_pass_rate, golden_fix_pass_rate,"
             " per_case_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
