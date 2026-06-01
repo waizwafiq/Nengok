@@ -17,6 +17,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
+from nengok.state.alembic._helpers import current_schema
+
 revision: str = "0004_prefix_tables_with_nengok"
 down_revision: str | Sequence[str] | None = "0003_extend_cycle_history"
 branch_labels: str | Sequence[str] | None = None
@@ -41,20 +43,22 @@ _INDEX_RENAMES: tuple[tuple[str, str, str], ...] = (
 
 
 def upgrade() -> None:
+    schema = current_schema()
     for old, new in _TABLE_RENAMES:
-        op.rename_table(old, new)
+        op.rename_table(old, new, schema=schema)
     for old, new, table in _INDEX_RENAMES:
-        op.drop_index(old, table_name=table)
-        op.create_index(new, table, _index_columns(new))
+        op.drop_index(old, table_name=table, schema=schema)
+        op.create_index(new, table, _index_columns(new), schema=schema)
 
 
 def downgrade() -> None:
+    schema = current_schema()
     for old, new, table in _INDEX_RENAMES:
-        op.drop_index(new, table_name=table)
+        op.drop_index(new, table_name=table, schema=schema)
         old_table = _strip_prefix(table)
-        op.create_index(old, old_table, _index_columns(new))
+        op.create_index(old, old_table, _index_columns(new), schema=schema)
     for old, new in reversed(_TABLE_RENAMES):
-        op.rename_table(new, old)
+        op.rename_table(new, old, schema=schema)
 
 
 def _index_columns(new_index: str) -> list[str]:

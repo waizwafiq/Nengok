@@ -13,6 +13,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from nengok.state.alembic._helpers import current_schema
+
 revision: str = "0002_rename_approval_columns"
 down_revision: str | Sequence[str] | None = "0001_initial_schema"
 branch_labels: str | Sequence[str] | None = None
@@ -20,7 +22,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("approvals") as batch:
+    schema = current_schema()
+    with op.batch_alter_table("approvals", schema=schema) as batch:
         batch.alter_column("decided_by", new_column_name="reviewer", existing_type=sa.Text())
         batch.alter_column(
             "decided_at",
@@ -29,12 +32,13 @@ def upgrade() -> None:
             existing_nullable=False,
         )
         batch.alter_column("notes", new_column_name="reason", existing_type=sa.Text())
-    op.create_index("approvals_created_idx", "approvals", ["created_at"])
+    op.create_index("approvals_created_idx", "approvals", ["created_at"], schema=schema)
 
 
 def downgrade() -> None:
-    op.drop_index("approvals_created_idx", table_name="approvals")
-    with op.batch_alter_table("approvals") as batch:
+    schema = current_schema()
+    op.drop_index("approvals_created_idx", table_name="approvals", schema=schema)
+    with op.batch_alter_table("approvals", schema=schema) as batch:
         batch.alter_column("reason", new_column_name="notes", existing_type=sa.Text())
         batch.alter_column(
             "created_at",

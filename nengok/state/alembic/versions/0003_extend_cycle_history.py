@@ -13,6 +13,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from nengok.state.alembic._helpers import current_schema
+
 revision: str = "0003_extend_cycle_history"
 down_revision: str | Sequence[str] | None = "0002_rename_approval_columns"
 branch_labels: str | Sequence[str] | None = None
@@ -20,7 +22,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("cycles") as batch:
+    schema = current_schema()
+    with op.batch_alter_table("cycles", schema=schema) as batch:
         batch.add_column(
             sa.Column(
                 "status",
@@ -49,7 +52,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("cycles") as batch:
+    schema = current_schema()
+    with op.batch_alter_table("cycles", schema=schema) as batch:
         batch.drop_column("error_message")
         batch.drop_column("clusters_discovered")
         batch.drop_column("clusters_processed")
