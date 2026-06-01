@@ -63,7 +63,7 @@ class Orchestrator:
     def __post_init__(self) -> None:
         self._ensure_runner_registered()
         self._phoenix = PhoenixWrapper(self.config)
-        self._state = StateStore(self.config.state_db_path)
+        self._state = StateStore(self.config.state_db_path, schema=self.config.database_schema)
 
         self._redactor = Redactor.from_config(self.config)
 

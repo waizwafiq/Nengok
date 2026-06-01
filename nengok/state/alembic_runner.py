@@ -45,7 +45,7 @@ LEGACY_VERSION_TO_REVISION: dict[int, str] = {
 }
 
 
-def build_config(engine: Engine) -> Config:
+def build_config(engine: Engine, *, schema: str | None = None) -> Config:
     """Return an Alembic `Config` bound to `engine` for in-process runs."""
     cfg = Config(str(ALEMBIC_INI_PATH))
     cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
@@ -54,10 +54,12 @@ def build_config(engine: Engine) -> Config:
         engine.url.render_as_string(hide_password=False),
     )
     cfg.attributes["connection"] = engine
+    if schema is not None:
+        cfg.attributes["version_table_schema"] = schema
     return cfg
 
 
-def upgrade_head(engine: Engine) -> None:
+def upgrade_head(engine: Engine, *, schema: str | None = None) -> None:
     """
     Apply every pending revision up to `head`.
 
@@ -75,9 +77,9 @@ def upgrade_head(engine: Engine) -> None:
     belongs to the operator's own Alembic environment and is left in
     place untouched.
     """
-    _stamp_legacy_history(engine)
+    _stamp_legacy_history(engine, schema=schema)
     _reconcile_legacy_alembic_version(engine)
-    command.upgrade(build_config(engine), "head")
+    command.upgrade(build_config(engine, schema=schema), "head")
 
 
 def _reconcile_legacy_alembic_version(engine: Engine) -> None:
@@ -126,7 +128,7 @@ def _reconcile_legacy_alembic_version(engine: Engine) -> None:
         connection.execute(text("DROP TABLE alembic_version"))
 
 
-def _stamp_legacy_history(engine: Engine) -> None:
+def _stamp_legacy_history(engine: Engine, *, schema: str | None = None) -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     if LEGACY_SCHEMA_VERSIONS_TABLE not in table_names:
@@ -143,18 +145,18 @@ def _stamp_legacy_history(engine: Engine) -> None:
     if revision is None:
         return
 
-    command.stamp(build_config(engine), revision)
+    command.stamp(build_config(engine, schema=schema), revision)
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE schema_versions"))
 
 
-def current_revision(engine: Engine) -> str | None:
+def current_revision(engine: Engine, *, schema: str | None = None) -> str | None:
     """Return the revision currently stamped on `engine`, or None."""
+    opts: dict[str, str] = {"version_table": NENGOK_ALEMBIC_VERSION_TABLE}
+    if schema is not None:
+        opts["version_table_schema"] = schema
     with engine.connect() as connection:
-        context = MigrationContext.configure(
-            connection,
-            opts={"version_table": NENGOK_ALEMBIC_VERSION_TABLE},
-        )
+        context = MigrationContext.configure(connection, opts=opts)
         return context.get_current_revision()
 
 

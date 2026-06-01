@@ -18,7 +18,7 @@ ConfigDep = Annotated[NengokConfig, Depends(get_config)]
 
 
 def get_store(config: ConfigDep) -> StateStore:
-    return StateStore(config.state_db_path)
+    return StateStore(config.state_db_path, schema=config.database_schema)
 
 
 StoreDep = Annotated[StateStore, Depends(get_store)]
