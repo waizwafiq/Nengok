@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine, make_url
@@ -21,8 +21,6 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
     from nengok.config import NengokConfig
-
-DBAPIConnection = object
 
 DEFAULT_POOL_SIZE = 5
 DEFAULT_MAX_OVERFLOW = 5
@@ -92,7 +90,7 @@ def _attach_sqlite_pragmas(engine: Engine) -> None:
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragmas(
-        dbapi_connection: DBAPIConnection,
+        dbapi_connection: Any,
         _connection_record: ConnectionPoolEntry,
     ) -> None:
         cursor = dbapi_connection.cursor()
