@@ -107,6 +107,12 @@ Open `.env` and fill in `GOOGLE_API_KEY` (and `PHOENIX_API_KEY` if your Phoenix 
 
 Nengok and the sample agent both auto-load `.env` from the current directory at startup (via `python-dotenv`), so you do not need to `export` anything in your shell. Run every command from the repo root and the env vars come along for free.
 
+#### Pointing state at Postgres or MySQL
+
+By default Nengok keeps cluster and approval state in a SQLite file at `~/.nengok/state.db`. To put state in a database you already run, set `DATABASE_URL` (for example `postgresql+psycopg://user:pass@host/db` or `mysql+pymysql://user:pass@host/db`) and re-run `nengok init`. The TOML key `database_url` accepts the same value if you prefer to keep it off the shell environment, and the env var wins when both are present. Anything outside the four supported dialects (`sqlite`, `postgresql`, `postgresql+psycopg`, `mysql`, `mysql+pymysql`) is rejected at config-load with a `ConfigError` so a typo surfaces before the orchestrator starts.
+
+The engine is built once per process via `ConnectionFactory` in [nengok/state/connection.py](../nengok/state/connection.py) with `pool_size=5` and `max_overflow=5`, so Nengok holds at most ten connections at peak against a database it shares with your application.
+
 #### Swapping the LLMs
 
 The four Gemini models in the loop are all overridable via environment variables, so you can run the SDK against a different snapshot (or a non-public preview) without editing source or `~/.nengok/config.toml`:

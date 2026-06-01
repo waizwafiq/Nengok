@@ -32,6 +32,16 @@ DEFAULT_CONFIG_PATH = Path.home() / ".nengok" / "config.toml"
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
 DEFAULT_STATE_DB = Path.home() / ".nengok" / "state.db"
 
+SUPPORTED_DATABASE_DIALECTS: frozenset[str] = frozenset(
+    {
+        "sqlite",
+        "postgresql",
+        "postgresql+psycopg",
+        "mysql",
+        "mysql+pymysql",
+    }
+)
+
 DIAGNOSER_MODEL = "gemini-3.1-pro-preview"
 JUDGE_MODEL = "gemini-3-flash-preview"
 
@@ -100,6 +110,8 @@ class NengokConfig:
 
     artifacts_dir: Path = field(default_factory=lambda: DEFAULT_ARTIFACTS_DIR)
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
+    database_url: str | None = None
+    database_allow_plaintext: bool = False
     baseline_prompt_path: Path | None = None
     baseline_prompt_loader: str = "nengok.core.fixer.loaders:default_loader"
 
@@ -161,6 +173,8 @@ class NengokConfig:
             if value is not None and not isinstance(value, Path):
                 merged[path_key] = Path(str(value))
 
+        merged["database_url"] = _resolve_database_url(merged.get("database_url"))
+
         config = cls(**merged)
         config.validate()
         return config
@@ -216,6 +230,9 @@ class NengokConfig:
                 SAMPLE_AGENT_PROJECT_NAME,
             )
 
+        if self.database_url:
+            _validate_database_url(self.database_url)
+
         if self.baseline_prompt_path is not None:
             path = self.baseline_prompt_path
             if not path.exists():
@@ -247,6 +264,56 @@ class NengokConfig:
                 raise ConfigError(
                     f"{name}={value} is out of range. " f"Expected a value between {lo} and {hi}."
                 )
+
+
+def _validate_database_url(url: str) -> None:
+    """
+    Reject unsupported dialects and obviously malformed URLs.
+
+    SQLAlchemy parses the URL once so a typo in the driver name fails
+    here rather than at first connect, and the supported-set message
+    names the four dialects Nengok actually exercises.
+    """
+    try:
+        from sqlalchemy.engine import make_url
+        from sqlalchemy.exc import ArgumentError
+    except ImportError as exc:
+        raise ConfigError(
+            "SQLAlchemy is required to validate database_url but is not installed. "
+            "Reinstall with `pip install -e .` to pick up the base dependencies."
+        ) from exc
+
+    try:
+        parsed = make_url(url)
+    except ArgumentError as exc:
+        raise ConfigError(
+            f"database_url '{url}' could not be parsed as a SQLAlchemy URL: {exc}. "
+            "Expected forms: 'sqlite:///path/to/state.db', "
+            "'postgresql+psycopg://user:pass@host/db', or 'mysql+pymysql://user:pass@host/db'."
+        ) from exc
+
+    if parsed.drivername not in SUPPORTED_DATABASE_DIALECTS:
+        supported = ", ".join(sorted(SUPPORTED_DATABASE_DIALECTS))
+        raise ConfigError(
+            f"database_url dialect '{parsed.drivername}' is not supported. "
+            f"Use one of: {supported}. MongoDB and other document stores are out of scope."
+        )
+
+
+def _resolve_database_url(toml_value: Any) -> str:
+    """
+    Resolve `database_url` following env > TOML > SQLite default.
+
+    The SQLite fallback creates the parent directory so the engine
+    can open the file on first connect without a `FileNotFoundError`.
+    """
+    env_value = os.environ.get("DATABASE_URL")
+    if env_value:
+        return env_value
+    if toml_value:
+        return str(toml_value)
+    DEFAULT_STATE_DB.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{DEFAULT_STATE_DB.as_posix()}"
 
 
 def _read_config_file(path: Path) -> dict[str, Any]:
@@ -282,6 +349,7 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_REDACTION_ENABLED": "redaction_enabled",
         "NENGOK_REDACTOR_CALLABLE": "redactor_callable",
         "NENGOK_METRICS_ENABLED": "metrics_enabled",
+        "NENGOK_DATABASE_ALLOW_PLAINTEXT": "database_allow_plaintext",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
@@ -295,6 +363,7 @@ def _read_env() -> dict[str, Any]:
             "redaction_enabled",
             "gemini_use_vertex",
             "metrics_enabled",
+            "database_allow_plaintext",
         }:
             out[config_key] = _parse_bool(value)
         elif config_key == "dashboard_cors_origins":

@@ -192,6 +192,12 @@ def init(
     )
     typer.echo("")
     typer.echo(f"Wrote {written}.")
+    if not os.environ.get("DATABASE_URL"):
+        typer.echo(
+            "Nengok is using SQLite at ~/.nengok/state.db. "
+            "To use your own database, set DATABASE_URL "
+            "(postgresql://... or mysql+pymysql://...) and re-run nengok init."
+        )
     typer.echo(
         "Next: run `python -m sample_agent.seed --count 5` to seed traces, then `nengok run` to see your first cycle."
     )
