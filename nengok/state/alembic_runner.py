@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 ALEMBIC_INI_PATH: Path = Path(__file__).parent / "alembic.ini"
 ALEMBIC_SCRIPT_LOCATION: Path = Path(__file__).parent / "alembic"
 
+NENGOK_ALEMBIC_VERSION_TABLE = "nengok_alembic_version"
+
 LEGACY_SCHEMA_VERSIONS_TABLE = "schema_versions"
 LEGACY_VERSION_TO_REVISION: dict[int, str] = {
     1: "0001_initial_schema",
@@ -85,7 +87,10 @@ def _stamp_legacy_history(engine: Engine) -> None:
 def current_revision(engine: Engine) -> str | None:
     """Return the revision currently stamped on `engine`, or None."""
     with engine.connect() as connection:
-        context = MigrationContext.configure(connection)
+        context = MigrationContext.configure(
+            connection,
+            opts={"version_table": NENGOK_ALEMBIC_VERSION_TABLE},
+        )
         return context.get_current_revision()
 
 
