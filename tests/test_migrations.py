@@ -150,10 +150,7 @@ def test_legacy_schema_versions_database_is_stamped_and_renamed(tmp_path: Path) 
         conn.execute(text("CREATE INDEX approvals_cluster_idx ON approvals (cluster_id)"))
         conn.execute(text("CREATE INDEX approvals_created_idx ON approvals (created_at)"))
         conn.execute(
-            text(
-                "CREATE TABLE experiments ("
-                "row_id INTEGER PRIMARY KEY, cluster_id TEXT, created_at TEXT)"
-            )
+            text("CREATE TABLE experiments (" "row_id INTEGER PRIMARY KEY, cluster_id TEXT, created_at TEXT)")
         )
         conn.execute(text("CREATE INDEX experiments_cluster_idx ON experiments (cluster_id)"))
         conn.execute(text("CREATE INDEX experiments_created_idx ON experiments (created_at)"))
