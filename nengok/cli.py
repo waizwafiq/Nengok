@@ -573,11 +573,12 @@ def doctor(
         raise typer.Exit(code=1) from exc
 
     results = _run_probes(config=config, probes=DEFAULT_PROBES)
+    scope = _describe_connection_scope(config=config, privilege_result=_find_result(results, "db-privileges"))
 
     if json_output:
-        _print_doctor_json(version=__version__, results=results)
+        _print_doctor_json(version=__version__, results=results, connection_scope=scope)
     else:
-        _print_doctor_text(version=__version__, results=results)
+        _print_doctor_text(version=__version__, results=results, connection_scope=scope)
 
     exit_code = _doctor_exit_code(results=results, strict=strict)
     if exit_code != 0:
@@ -601,21 +602,105 @@ def _run_probes(*, config: NengokConfig, probes: tuple[Probe, ...]) -> list[Prob
     return results
 
 
-def _print_doctor_text(*, version: str, results: list[ProbeResult]) -> None:
+def _print_doctor_text(
+    *,
+    version: str,
+    results: list[ProbeResult],
+    connection_scope: dict[str, str] | None = None,
+) -> None:
     typer.echo(f"Nengok v{version} health check")
     for result in results:
         marker = result.status.value
         typer.echo(f"  [{marker}] {result.name}: {result.detail}")
         if result.status != ProbeStatus.OK and result.fix_hint:
             typer.echo(f"    Fix: {result.fix_hint}")
+    if connection_scope:
+        typer.echo("Connection scope:")
+        for key, value in connection_scope.items():
+            typer.echo(f"  {key}: {value}")
 
 
-def _print_doctor_json(*, version: str, results: list[ProbeResult]) -> None:
-    payload = {
+def _print_doctor_json(
+    *,
+    version: str,
+    results: list[ProbeResult],
+    connection_scope: dict[str, str] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
         "nengok_version": version,
         "results": [r.to_dict() for r in results],
     }
+    if connection_scope:
+        payload["connection_scope"] = connection_scope
     typer.echo(_json.dumps(payload, indent=2))
+
+
+def _find_result(results: list[ProbeResult], name: str) -> ProbeResult | None:
+    for result in results:
+        if result.name == name:
+            return result
+    return None
+
+
+def _describe_connection_scope(
+    *,
+    config: NengokConfig,
+    privilege_result: ProbeResult | None,
+) -> dict[str, str]:
+    """
+    Return one-line-per-attribute summary of the active database connection.
+
+    Sensitive fields (`user`, `host`) are masked the same way as
+    `nengok config show`. SQLite connections collapse the host/port/user
+    columns to `<local file>` because the dialect has no network surface.
+    """
+    from sqlalchemy.engine import make_url
+
+    from nengok.cli_helpers import mask_secret
+
+    url_str = config.database_url
+    if not url_str:
+        return {"dialect": "<unset>", "scope": "no DATABASE_URL resolved"}
+
+    url = make_url(url_str)
+    driver = url.drivername
+    privilege_detail = privilege_result.detail if privilege_result else "<not run>"
+
+    if driver.startswith("sqlite"):
+        return {
+            "dialect": driver,
+            "host": "<local file>",
+            "port": "<n/a>",
+            "user": "<n/a>",
+            "database": str(url.database) if url.database else "<memory>",
+            "tls": "n/a (local file)",
+            "privilege": privilege_detail,
+        }
+
+    host_loopback = (url.host or "").lower() in {"localhost", "127.0.0.1", "::1"}
+    host_display = url.host or "<unset>" if host_loopback else mask_secret(url.host)
+    user_display = mask_secret(url.username) if url.username else "<unset>"
+    return {
+        "dialect": driver,
+        "host": host_display,
+        "port": str(url.port) if url.port else "<default>",
+        "user": user_display,
+        "database": url.database or "<unset>",
+        "tls": _tls_label(driver, host_loopback, bool(config.database_allow_plaintext)),
+        "privilege": privilege_detail,
+    }
+
+
+def _tls_label(driver: str, host_loopback: bool, allow_plaintext: bool) -> str:
+    if host_loopback:
+        return "loopback (plaintext acceptable)"
+    if allow_plaintext:
+        return "plaintext (database_allow_plaintext=true)"
+    if driver.startswith("postgresql"):
+        return "require (sslmode=require)"
+    if driver.startswith("mysql"):
+        return "enabled (ssl=true)"
+    return "<unknown dialect>"
 
 
 def _doctor_exit_code(*, results: list[ProbeResult], strict: bool) -> int:
