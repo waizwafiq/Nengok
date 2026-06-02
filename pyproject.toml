@@ -73,6 +73,10 @@ gemini = [
     "google-genai>=0.7.0",
     "openinference-instrumentation-google-genai>=1.0.0",
 ]
+tui = [
+    "textual>=0.85.0,<1.0",
+    "rich>=13.7.0",
+]
 dev = [
     "ruff==0.6.9",
     "mypy>=1.11.0",

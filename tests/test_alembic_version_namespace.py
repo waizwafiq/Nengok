@@ -87,10 +87,12 @@ def test_foreign_alembic_version_is_left_untouched(sqlite_engine: Engine) -> Non
 
 def test_legacy_nengok_alembic_version_is_reconciled(sqlite_engine: Engine) -> None:
     """A previous-install `alembic_version` with Nengok ids migrates into the namespace."""
-    nengok_head = "0004_prefix_tables_with_nengok"
-    assert nengok_head in KNOWN_NENGOK_REVISIONS
+    upgrade_head(sqlite_engine)
+    head_revision = current_revision(sqlite_engine)
+    assert head_revision in KNOWN_NENGOK_REVISIONS
 
     with sqlite_engine.begin() as conn:
+        conn.execute(text(f"DROP TABLE {NENGOK_ALEMBIC_VERSION_TABLE}"))
         conn.execute(
             text(
                 "CREATE TABLE alembic_version ("
@@ -100,7 +102,7 @@ def test_legacy_nengok_alembic_version_is_reconciled(sqlite_engine: Engine) -> N
         )
         conn.execute(
             text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
-            {"rev": nengok_head},
+            {"rev": head_revision},
         )
 
     upgrade_head(sqlite_engine)
@@ -108,7 +110,7 @@ def test_legacy_nengok_alembic_version_is_reconciled(sqlite_engine: Engine) -> N
     tables = _table_names(sqlite_engine)
     assert NENGOK_ALEMBIC_VERSION_TABLE in tables
     assert DEFAULT_ALEMBIC_VERSION_TABLE not in tables
-    assert current_revision(sqlite_engine) == nengok_head
+    assert current_revision(sqlite_engine) == head_revision
 
 
 def test_existing_namespaced_bookkeeping_is_honored_on_next_upgrade(sqlite_engine: Engine) -> None:

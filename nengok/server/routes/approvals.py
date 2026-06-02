@@ -20,6 +20,7 @@ router = APIRouter(tags=["approvals"])
 
 
 ApprovalDecision = Literal["approved", "rejected", "dismissed", "escalated"]
+ApprovalSource = Literal["dashboard", "tui", "api"]
 
 
 _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
@@ -28,6 +29,8 @@ _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
     "dismissed": ClusterStatus.DISMISSED,
     "escalated": ClusterStatus.ESCALATED,
 }
+
+_VALID_SOURCES: frozenset[str] = frozenset({"dashboard", "tui", "api"})
 
 
 __all__ = [
@@ -43,6 +46,7 @@ class ApprovalCreate(BaseModel):
     decision: ApprovalDecision
     reviewer: str | None = None
     reason: str | None = None
+    source: ApprovalSource = "dashboard"
 
 
 class LegacyApprovalCreate(BaseModel):
@@ -52,6 +56,7 @@ class LegacyApprovalCreate(BaseModel):
     decision: ApprovalDecision
     reviewer: str | None = Field(default=None, alias="decided_by")
     reason: str | None = Field(default=None, alias="notes")
+    source: ApprovalSource = "api"
 
     model_config = {"populate_by_name": True}
 
@@ -62,18 +67,27 @@ class ApprovalResponse(BaseModel):
     decision: ApprovalDecision
     reviewer: str | None
     reason: str | None
+    source: ApprovalSource = "dashboard"
     created_at: str
 
 
 def _record(
-    store: StoreDep, *, cluster_id: str, decision: str, reviewer: str | None, reason: str | None
+    store: StoreDep,
+    *,
+    cluster_id: str,
+    decision: str,
+    reviewer: str | None,
+    reason: str | None,
+    source: str,
 ) -> dict:
-    resolved, source = resolve_reviewer(reviewer)
+    resolved, reviewer_source = resolve_reviewer(reviewer)
+    normalized_source = source if source in _VALID_SOURCES else "dashboard"
     approval_id = store.record_approval(
         cluster_id=cluster_id,
         decision=decision,
         reviewer=resolved,
         reason=(reason.strip() if reason else None) or None,
+        source=normalized_source,
     )
     store.mark_status(cluster_id, _DECISION_TO_STATUS[decision])
     return {
@@ -81,7 +95,8 @@ def _record(
         "cluster_id": cluster_id,
         "status": _DECISION_TO_STATUS[decision].value,
         "reviewer": resolved,
-        "reviewer_source": source,
+        "reviewer_source": reviewer_source,
+        "source": normalized_source,
     }
 
 
@@ -118,6 +133,7 @@ def create_cluster_approval(cluster_id: str, body: ApprovalCreate, store: StoreD
         decision=body.decision,
         reviewer=body.reviewer,
         reason=body.reason,
+        source=body.source,
     )
 
 
@@ -129,6 +145,7 @@ def create_approval(body: LegacyApprovalCreate, store: StoreDep) -> dict:
         decision=body.decision,
         reviewer=body.reviewer,
         reason=body.reason,
+        source=body.source,
     )
 
 

@@ -192,7 +192,13 @@ class StateStore:
         return [dict(row) for row in rows]
 
     def record_approval(
-        self, *, cluster_id: str, decision: str, reviewer: str | None, reason: str | None
+        self,
+        *,
+        cluster_id: str,
+        decision: str,
+        reviewer: str | None,
+        reason: str | None,
+        source: str = "dashboard",
     ) -> str:
         approval_id = str(uuid.uuid4())
         now = datetime.now(UTC).isoformat()
@@ -200,10 +206,10 @@ class StateStore:
             conn.execute(
                 """
                 INSERT INTO nengok_approvals
-                  (approval_id, cluster_id, decision, reviewer, created_at, reason)
-                VALUES (?, ?, ?, ?, ?, ?)
+                  (approval_id, cluster_id, decision, reviewer, created_at, reason, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (approval_id, cluster_id, decision, reviewer, now, reason),
+                (approval_id, cluster_id, decision, reviewer, now, reason, source),
             )
         return approval_id
 
@@ -217,7 +223,7 @@ class StateStore:
         drop rows between requests.
         """
         sql = """
-            SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
+            SELECT approval_id, cluster_id, decision, reviewer, reason, source, created_at
             FROM nengok_approvals
         """
         params: tuple = ()
@@ -238,7 +244,7 @@ class StateStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT approval_id, cluster_id, decision, reviewer, reason, created_at
+                SELECT approval_id, cluster_id, decision, reviewer, reason, source, created_at
                 FROM nengok_approvals
                 WHERE cluster_id = ?
                 ORDER BY created_at DESC, approval_id DESC
@@ -266,7 +272,8 @@ class StateStore:
         self, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[dict]:
         sql, params = _range_sql(
-            "SELECT approval_id, cluster_id, decision, reviewer, reason, created_at " "FROM nengok_approvals",
+            "SELECT approval_id, cluster_id, decision, reviewer, reason, source, created_at "
+            "FROM nengok_approvals",
             column="created_at",
             since=since,
             until=until,
