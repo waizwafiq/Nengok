@@ -1,0 +1,49 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: nengok-migrations
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    spec:
+      template:
+        spec:
+          # One-shot job: never retry inside the pod; a failed migration
+          # aborts the deploy rollout, it does not loop.
+          maxRetries: 0
+          timeoutSeconds: 900
+          containers:
+            - name: migrate
+              image: REPLACED_BY_CI
+              command: ["nengok"]
+              args: ["db", "migrate"]
+              env:
+                - name: GOOGLE_GENAI_USE_VERTEXAI
+                  value: "true"
+                - name: GOOGLE_CLOUD_PROJECT
+                  value: "PROJECT_ID"
+                - name: GOOGLE_CLOUD_LOCATION
+                  value: "global"
+                # State store reads through the Cloud SQL Auth Proxy sidecar
+                # on the pod loopback. The Phase 14.3 TLS guardrail exempts
+                # 127.0.0.1, so sslmode=disable is the right setting; TLS is
+                # the proxy's job on the wire to Cloud SQL.
+                - name: DATABASE_URL
+                  value: "postgresql+psycopg://nengok-runtime%40PROJECT_ID.iam@127.0.0.1:5432/nengok?sslmode=disable"
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+            # Cloud SQL Auth Proxy as a sidecar inside the job pod. Pinned
+            # to the same tag as the dashboard service.
+            - name: cloudsql-proxy
+              image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+              args:
+                - "--auto-iam-authn"
+                - "--port=5432"
+                - "PROJECT_ID:asia-southeast1:nengok-state"
+              resources:
+                limits:
+                  cpu: "250m"
+                  memory: 256Mi
