@@ -47,18 +47,38 @@ def upgrade() -> None:
     for old, new in _TABLE_RENAMES:
         op.rename_table(old, new, schema=schema)
     for old, new, table in _INDEX_RENAMES:
-        op.drop_index(old, table_name=table, schema=schema)
-        op.create_index(new, table, _index_columns(new), schema=schema)
+        _rename_index(old, new, table, schema=schema)
 
 
 def downgrade() -> None:
     schema = current_schema()
     for old, new, table in _INDEX_RENAMES:
-        op.drop_index(new, table_name=table, schema=schema)
-        old_table = _strip_prefix(table)
-        op.create_index(old, old_table, _index_columns(new), schema=schema)
+        _rename_index(new, old, table, schema=schema)
     for old, new in reversed(_TABLE_RENAMES):
         op.rename_table(new, old, schema=schema)
+
+
+def _rename_index(old: str, new: str, table: str, *, schema: str | None) -> None:
+    """
+    Rename an index in place rather than drop + recreate.
+
+    MySQL refuses to drop an index that backs a foreign key (errno 1553)
+    so the SQLite drop + create path raises mid-migration. Postgres and
+    MySQL 5.7+ both support a true rename, which leaves the FK index
+    intact. SQLite has no `ALTER INDEX RENAME`, so it keeps the original
+    drop + create path; SQLite does not enforce the FK index requirement
+    the same way, so the drop is safe there.
+    """
+    dialect = op.get_bind().dialect.name
+    if dialect == "mysql":
+        qualified = f"{schema}.{table}" if schema else table
+        op.execute(f"ALTER TABLE {qualified} RENAME INDEX {old} TO {new}")
+    elif dialect == "postgresql":
+        qualified = f"{schema}.{old}" if schema else old
+        op.execute(f"ALTER INDEX {qualified} RENAME TO {new}")
+    else:
+        op.drop_index(old, table_name=table, schema=schema)
+        op.create_index(new, table, _index_columns(new), schema=schema)
 
 
 def _index_columns(new_index: str) -> list[str]:
@@ -71,7 +91,3 @@ def _index_columns(new_index: str) -> list[str]:
         "nengok_cycles_started_idx": ["started_at"],
     }
     return mapping[new_index]
-
-
-def _strip_prefix(table: str) -> str:
-    return table.removeprefix("nengok_")

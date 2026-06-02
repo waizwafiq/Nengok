@@ -20,7 +20,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
@@ -93,11 +93,24 @@ def mysql_engine() -> Iterator[Engine]:
 
 
 def _drop_all_nengok(engine: Engine) -> None:
-    inspector = inspect(engine)
-    for name in inspector.get_table_names():
-        if name == "alembic_version" or name.startswith("nengok_"):
-            with engine.begin() as conn:
-                conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
+    """
+    Drop every Nengok-owned table in FK-dependency order.
+
+    Plain `DROP TABLE` in name order fails on MySQL when a parent table
+    is named before its child (errno 3730). Reflecting through
+    `MetaData` lets SQLAlchemy walk the FK graph and emit drops in the
+    right order on every dialect. `alembic_version` is included to cover
+    the legacy bookkeeping table some teardowns leave behind.
+    """
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    targets = [
+        table
+        for name, table in metadata.tables.items()
+        if name == "alembic_version" or name.startswith("nengok_")
+    ]
+    if targets:
+        metadata.drop_all(bind=engine, tables=targets)
 
 
 def _engine_fingerprint(engine: Engine) -> list[tuple[str, tuple[str, ...]]]:
