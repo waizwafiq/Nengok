@@ -104,7 +104,17 @@ class PhoenixWrapper:
         self._client = Client(**kwargs)
         return self._client
 
-    def get_spans(self, *, project_identifier: str, limit: int) -> list[TraceSpan]:
+    def get_spans(
+        self, *, project_identifier: str, limit: int, with_annotations: bool = True
+    ) -> list[TraceSpan]:
+        """
+        Pull spans for a project, optionally enriched with eval annotations.
+
+        ``with_annotations`` defaults to True for the Observer's sampling
+        path, which needs the ``LOW_EVAL_SCORE`` signal. Callers that only
+        want span bodies (the Diagnoser and Fixer reading exemplars) pass
+        ``False`` to skip the extra ``get_span_annotations`` roundtrip.
+        """
         client = self._get_client()
         raw = self._call_with_timeout(
             lambda: client.spans.get_spans(project_identifier=project_identifier, limit=limit),
@@ -112,7 +122,8 @@ class PhoenixWrapper:
             timeout_seconds=self._config.phoenix_read_timeout_seconds,
         )
         spans = [normalize_span(item) for item in raw]
-        self._merge_span_annotations(client, project_identifier, spans)
+        if with_annotations:
+            self._merge_span_annotations(client, project_identifier, spans)
         return spans
 
     def _merge_span_annotations(self, client: Any, project_identifier: str, spans: list[TraceSpan]) -> None:
@@ -126,6 +137,12 @@ class PhoenixWrapper:
         looks healthy and is never sampled. Each annotation is stored under its
         name with its full result mapping (``{"score": ..., "label": ...}``) so
         ``AnomalyFilter`` can read ``value["score"]`` unchanged.
+
+        ``get_span_annotations`` takes a per-page ``limit`` (default 1000) but
+        paginates internally via cursor until exhausted, so the value is a
+        roundtrip-tuning knob rather than a cap -- we size it to the batch so a
+        typical cycle fetches every annotation in a single page without risking
+        silent truncation when spans carry multiple evals.
         """
         span_ids = [s.span_id for s in spans if s.span_id]
         if not span_ids:
@@ -133,16 +150,25 @@ class PhoenixWrapper:
         try:
             rows = self._call_with_timeout(
                 lambda: client.spans.get_span_annotations(
-                    project_identifier=project_identifier, span_ids=span_ids
+                    project_identifier=project_identifier,
+                    span_ids=span_ids,
+                    limit=len(span_ids) * 8,
                 ),
                 method="spans.get_span_annotations",
                 timeout_seconds=self._config.phoenix_read_timeout_seconds,
             )
+        except PhoenixTimeoutError:
+            # A timeout is a genuine read failure: escalate it like every other
+            # Phoenix read in this module instead of silently dropping eval
+            # signal for the cycle.
+            raise
         except Exception:
-            # Annotations are best-effort enrichment: a Phoenix that lacks the
-            # annotations endpoint (or a transient read error) must not sink the
-            # whole observer cycle, so we log and fall back to bare spans.
-            logger.debug("span annotation fetch failed; continuing without evals", exc_info=True)
+            # A Phoenix that lacks the annotations endpoint (or a transient read
+            # error) must not sink the whole observer cycle, so we warn and fall
+            # back to bare spans. Warn, not debug: a dead endpoint silently kills
+            # the ``LOW_EVAL_SCORE`` signal and nobody would notice at prod log
+            # levels.
+            logger.warning("span annotation fetch failed; continuing without evals", exc_info=True)
             return
         by_span: dict[str, dict[str, Any]] = {}
         for row in rows or []:
@@ -172,11 +198,17 @@ class PhoenixWrapper:
         (only trace-id), so this helper pulls a bounded batch from the
         project and filters client-side. Caller picks ``limit`` to bound
         the worst case.
+
+        Annotations are skipped: the only callers (Diagnoser hypothesizer and
+        Fixer prompt-proposer) read span bodies, not evals, so fetching
+        annotations here would be a wasted Phoenix roundtrip per cluster.
         """
         if not span_ids:
             return []
         wanted = set(span_ids)
-        batch = self.get_spans(project_identifier=project_identifier, limit=limit)
+        batch = self.get_spans(
+            project_identifier=project_identifier, limit=limit, with_annotations=False
+        )
         return [s for s in batch if s.span_id in wanted]
 
     def get_prompt_version(self, *, name: str) -> str | None:
