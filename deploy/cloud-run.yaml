@@ -16,8 +16,9 @@ spec:
         # Keep the collector running on a scaled-to-zero instance long enough to
         # flush its final scrape.
         run.googleapis.com/cpu-throttling: "false"
-        # Start the collector only once the app container is up.
-        run.googleapis.com/container-dependencies: '{"collector":["app"]}'
+        # Hold the app container until the Cloud SQL Auth Proxy is listening,
+        # then start the metrics collector last.
+        run.googleapis.com/container-dependencies: '{"app":["cloudsql-proxy"],"collector":["app"]}'
         # Map the Secret Manager secrets bound below. PROJECT_ID is substituted
         # by the deploy step (CI or scripts/deploy).
         run.googleapis.com/secrets: "nengok-phoenix-api-key:projects/PROJECT_ID/secrets/nengok-phoenix-api-key,nengok-dashboard-token:projects/PROJECT_ID/secrets/nengok-dashboard-token,nengok-gmp-config:projects/PROJECT_ID/secrets/nengok-gmp-config"
@@ -67,6 +68,13 @@ spec:
                 secretKeyRef:
                   name: nengok-dashboard-token
                   key: latest
+            # State store points at the Cloud SQL Auth Proxy sidecar on the
+            # pod loopback. The Phase 14.3 TLS guardrail exempts 127.0.0.1, so
+            # sslmode=disable is the right setting here: encryption is done by
+            # the proxy on the wire to Cloud SQL. IAM auth uses the runtime
+            # service account (`nengok-runtime@PROJECT_ID.iam`), so no password.
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://nengok-runtime%40PROJECT_ID.iam@127.0.0.1:5432/nengok?sslmode=disable"
           livenessProbe:
             httpGet:
               path: /health
@@ -74,6 +82,28 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 4
             failureThreshold: 3
+        # --- sidecar: Cloud SQL Auth Proxy ------------------------------------
+        # Terminates IAM-authenticated TLS to Cloud SQL and re-exposes the
+        # Postgres protocol on 127.0.0.1:5432 inside the pod. The image tag is
+        # pinned (not :latest) so a Cloud SQL Connectors release does not
+        # silently roll into a production deploy.
+        - name: cloudsql-proxy
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.13.0
+          args:
+            - "--auto-iam-authn"
+            - "--port=5432"
+            - "PROJECT_ID:asia-southeast1:nengok-state"
+          resources:
+            limits:
+              cpu: "250m"
+              memory: 256Mi
+          startupProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
         # --- sidecar: Managed Service for Prometheus collector ----------------
         - name: collector
           image: us-docker.pkg.dev/cloud-ops-agents-artifacts/cloud-run-gmp-sidecar/cloud-run-gmp-sidecar:1.2.0
