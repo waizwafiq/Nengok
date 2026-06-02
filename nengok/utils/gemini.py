@@ -135,7 +135,21 @@ def call_gemini(
     When `cost_tracker` is provided, the per-call `usage_metadata`
     counts feed the per-cycle budget. Stages share one tracker per
     cycle through the orchestrator.
+
+    `call_gemini` refuses to run inside an open `ConnectionFactory.begin()`
+    transaction because a 45-second Gemini timeout would hold a row lock
+    against the operator's pool for the duration. Close the transaction,
+    call Gemini, then open a new transaction for the result.
     """
+    from nengok.state.connection import in_transaction
+
+    if in_transaction():
+        raise RuntimeError(
+            "Cannot call Gemini from inside a database transaction; "
+            "close the transaction first, call Gemini, then open a new "
+            "transaction for the result."
+        )
+
     try:
         from google.genai import errors as genai_errors
     except ImportError as exc:
