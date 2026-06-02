@@ -25,7 +25,7 @@ from nengok.config import NengokConfig
 from nengok.state.connection import ConnectionFactory
 from nengok.utils.logging import configure_logging, get_logger
 
-SENTINEL_PASSWORD = "s3cret-canary-9b3f"
+URL_CANARY = "s3cret-canary-9b3f"
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def base_config(tmp_path: Path) -> NengokConfig:
         google_api_key="ai-studio-test-key",
         project_identifier="test-project",
         state_db_path=tmp_path / "state.db",
-        database_url=(f"postgresql+psycopg://nengok:{SENTINEL_PASSWORD}@no-such-host.invalid:5432/app"),
+        database_url=(f"postgresql+psycopg://nengok:{URL_CANARY}@no-such-host.invalid:5432/app"),
     )
 
 
@@ -68,15 +68,15 @@ def test_sentinel_password_does_not_leak_through_logger(
         if not line.strip():
             continue
         record = json.loads(line)
-        assert SENTINEL_PASSWORD not in record["message"], record
-    assert SENTINEL_PASSWORD not in output
+        assert URL_CANARY not in record["message"], record
+    assert URL_CANARY not in output
 
 
 def test_sentinel_password_does_not_leak_through_format_config_for_display(
     base_config: NengokConfig,
 ) -> None:
     rendered = format_config_for_display(base_config)
-    assert SENTINEL_PASSWORD not in rendered
+    assert URL_CANARY not in rendered
     assert "***" in rendered or "<redacted>" in rendered or "postgresql" not in rendered
 
 
@@ -85,7 +85,7 @@ def test_sentinel_password_does_not_leak_through_connection_failure(
 ) -> None:
     config = replace(
         base_config,
-        database_url=(f"postgresql+psycopg://nengok:{SENTINEL_PASSWORD}@no-such-host.invalid:5432/app"),
+        database_url=(f"postgresql+psycopg://nengok:{URL_CANARY}@no-such-host.invalid:5432/app"),
     )
     factory = ConnectionFactory(config)
 
@@ -102,9 +102,9 @@ def test_sentinel_password_does_not_leak_through_connection_failure(
         factory.dispose()
 
     assert captured_exc_str is not None, "expected a connection failure to inspect"
-    assert SENTINEL_PASSWORD not in captured_exc_str
+    assert URL_CANARY not in captured_exc_str
 
     for record in caplog.records:
-        assert SENTINEL_PASSWORD not in record.getMessage(), record
+        assert URL_CANARY not in record.getMessage(), record
         if record.exc_text:
-            assert SENTINEL_PASSWORD not in record.exc_text
+            assert URL_CANARY not in record.exc_text
