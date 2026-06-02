@@ -74,8 +74,9 @@ def _range_sql(
 class StateStore:
     """Thin SQLite wrapper. Connection-per-call; no pooling required."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, schema: str | None = None) -> None:
         self._db_path = db_path
+        self._schema = schema
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -90,7 +91,7 @@ class StateStore:
         """
         engine = create_engine(f"sqlite:///{self._db_path.as_posix()}")
         try:
-            upgrade_head(engine)
+            upgrade_head(engine, schema=self._schema)
         finally:
             engine.dispose()
 

@@ -845,7 +845,7 @@ def export(
     except ExportDateError as exc:
         raise _abort(str(exc)) from exc
 
-    store = StateStore(config.state_db_path)
+    store = StateStore(config.state_db_path, schema=config.database_schema)
     try:
         bundle = build_bundle(
             store=store,

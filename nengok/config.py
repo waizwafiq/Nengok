@@ -112,6 +112,7 @@ class NengokConfig:
     state_db_path: Path = field(default_factory=lambda: DEFAULT_STATE_DB)
     database_url: str | None = None
     database_allow_plaintext: bool = False
+    database_schema: str | None = None
     baseline_prompt_path: Path | None = None
     baseline_prompt_loader: str = "nengok.core.fixer.loaders:default_loader"
 
@@ -350,6 +351,7 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_REDACTOR_CALLABLE": "redactor_callable",
         "NENGOK_METRICS_ENABLED": "metrics_enabled",
         "NENGOK_DATABASE_ALLOW_PLAINTEXT": "database_allow_plaintext",
+        "NENGOK_DATABASE_SCHEMA": "database_schema",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():

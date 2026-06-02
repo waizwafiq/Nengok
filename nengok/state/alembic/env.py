@@ -20,9 +20,15 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from nengok.state.alembic_runner import NENGOK_ALEMBIC_VERSION_TABLE
+
 config = context.config
 
 target_metadata = None
+
+
+def _version_table_schema() -> str | None:
+    return config.attributes.get("version_table_schema")
 
 
 def run_migrations_offline() -> None:
@@ -33,6 +39,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table=NENGOK_ALEMBIC_VERSION_TABLE,
+        version_table_schema=_version_table_schema(),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -64,6 +72,8 @@ def _run(connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         render_as_batch=connection.dialect.name == "sqlite",
+        version_table=NENGOK_ALEMBIC_VERSION_TABLE,
+        version_table_schema=_version_table_schema(),
     )
     with context.begin_transaction():
         context.run_migrations()
