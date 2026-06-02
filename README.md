@@ -132,7 +132,7 @@ nengok-codebase/
 │   │   └── evaluators/    # Code-based + LLM-as-Judge
 │   ├── phoenix/           # Phoenix SDK + MCP integration
 │   ├── server/            # Bundled FastAPI dashboard API
-│   └── state/             # SQLite cluster lifecycle
+│   └── state/             # Multi-backend cluster lifecycle (SQLite default; Postgres or MySQL via DATABASE_URL)
 ├── frontend/              # Vite + React + TS + Tailwind dashboard
 ├── sample_agent/          # Travel Planner demo agent (3 injectable failures)
 ├── phoenix_harness/       # Live integration tests against a real Phoenix
