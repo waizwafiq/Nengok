@@ -47,6 +47,11 @@ jobs:
     if: needs.check.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     environment: phoenix-harness
+    # The harness exercises Phoenix only and does not import from
+    # nengok.state, so the multi-backend matrix that sdk-ci runs
+    # against Postgres and MySQL is not replicated here. Any future
+    # test that touches state.* should move to tests/ (matrixed) or
+    # add an opt-in service container alongside this job.
     steps:
       - uses: actions/checkout@v4
 
