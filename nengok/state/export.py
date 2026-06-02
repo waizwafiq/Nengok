@@ -214,6 +214,7 @@ _APPROVAL_CSV_FIELDS = (
     "reviewer",
     "reason",
     "created_at",
+    "source",
 )
 
 
@@ -255,6 +256,7 @@ def serialize_csv(bundle: ExportBundle) -> str:
                 "reviewer": row.get("reviewer") or "",
                 "reason": row.get("reason") or "",
                 "created_at": row.get("created_at", ""),
+                "source": row.get("source") or "dashboard",
             }
         )
     return out.getvalue()
@@ -285,6 +287,7 @@ def _serialize_approval_row(row: dict) -> dict:
         "reviewer": row.get("reviewer"),
         "reason": row.get("reason"),
         "created_at": row["created_at"],
+        "source": row.get("source") or "dashboard",
     }
 
 
