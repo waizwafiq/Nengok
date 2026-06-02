@@ -62,6 +62,8 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PHOENIX_API_KEY",
         "GOOGLE_API_KEY",
         "NENGOK_PROJECT",
+        "DATABASE_URL",
+        "NENGOK_DATABASE_ALLOW_PLAINTEXT",
     ):
         monkeypatch.delenv(key, raising=False)
 
