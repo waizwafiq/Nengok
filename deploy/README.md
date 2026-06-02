@@ -6,11 +6,23 @@ launched via `nengok dashboard`. This directory hosts that same dashboard on
 
 - **`Dockerfile`**: multi-stage build that bakes the Vite frontend into
   `nengok/server`'s static mount and runs `nengok dashboard` on `0.0.0.0:8765`.
-- **`cloud-run.yaml`**: Cloud Run service manifest (Knative). Two containers:
-  the dashboard (`app`) and a Managed Prometheus collector (`collector`)
-  sidecar. CI substitutes the image reference and project id at deploy time.
+- **`cloud-run.yaml`**: Cloud Run service manifest (Knative). Three containers:
+  the dashboard (`app`), the Cloud SQL Auth Proxy (`cloudsql-proxy`), and the
+  Managed Prometheus collector (`collector`) sidecars. CI substitutes the image
+  reference and project id at deploy time.
+- **`cloud-run-migrations.yaml`**: one-shot Cloud Run job that runs
+  `nengok db migrate` against the Cloud SQL instance through the same Auth
+  Proxy. The CI deploy step applies it before each service rollout so a failed
+  migration aborts the rollout instead of shipping broken schema.
 - **`runmonitoring.yaml`**: the scrape config the collector reads (stored in
   Secret Manager, mounted at `/etc/rungmp/config.yaml`).
+- **`terraform/cloud_sql.tf`**: Cloud SQL Postgres instance (`nengok-state`),
+  the `nengok` database, IAM authentication, and the two role bindings the
+  Cloud Run runtime service account needs. Automated backups on with a 7-day
+  retention window; durability is the operator's contract.
+- **`local/`**: optional docker-compose files for local Postgres / MySQL
+  validation, plus Cloud SQL Auth Proxy launcher scripts for connecting a
+  laptop to a hosted Cloud SQL instance.
 
 > If you are evaluating Nengok as a user, you can ignore this directory and run
 > the dashboard locally.
@@ -179,10 +191,9 @@ burn (`nengok_gemini_tokens_total`), stage latency
 
 Per the issue #25 discussion, the remaining GCP products are deferred:
 
-- **State persistence (v0.3)** will target **Cloud SQL (PostgreSQL)**. The store
-  is already relational (clusters, approvals, audit_log with foreign keys and
-  versioned migrations), so Postgres is a closer fit than the earlier MongoDB
-  idea. Pull it forward only when stateless Cloud Run pods force it.
 - **v0.2+ candidates:** GCS for artifacts, Cloud Scheduler / Pub/Sub / Eventarc
   (event-driven watch), IAP (replacing bearer auth), Cloud Armor, Cloud Build
   triggers, and Vertex AI Pipelines.
+
+State persistence on Cloud SQL Postgres is no longer on this list: it lands in
+v0.1 via `terraform/cloud_sql.tf` and the Auth Proxy sidecar above.
