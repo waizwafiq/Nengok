@@ -7,6 +7,7 @@ Sub-commands:
     nengok run        Execute one full Observe -> Diagnose -> Fix -> Verify cycle
     nengok watch      Continuous heartbeat mode (single-process, polls on an interval)
     nengok dashboard  Launch the local FastAPI + Vite approval UI
+    nengok review     Launch the Textual approval TUI over an SSH-friendly session
     nengok doctor     Run a read-only health check across the install
 """
 
@@ -541,6 +542,68 @@ def _parse_bool_env(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@app.command()
+def review(
+    host: Annotated[
+        str | None,
+        typer.Option(
+            "--host",
+            help="Hostname of the Nengok FastAPI server. Defaults to dashboard_host in config.",
+        ),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Port the Nengok FastAPI server is listening on."),
+    ] = None,
+    auth_token: Annotated[
+        str | None,
+        typer.Option(
+            "--auth-token",
+            help="Bearer token sent on every API call. Falls back to dashboard_auth_token.",
+        ),
+    ] = None,
+) -> None:
+    """Launch the Textual approval TUI against a local or remote Nengok server."""
+    try:
+        from nengok.tui.api_client import TuiApiClient
+        from nengok.tui.app import NengokReviewApp
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            "The `nengok review` TUI requires the optional `tui` extra.",
+            install_hint='pip install "nengok[tui]"',
+        ) from exc
+
+    config = _load_config()
+    bind_host = host or config.dashboard_host or "127.0.0.1"
+    bind_port = port or config.dashboard_port or 8765
+    token = auth_token or config.dashboard_auth_token
+    base_url = f"http://{bind_host}:{bind_port}"
+
+    client = TuiApiClient(base_url=base_url, auth_token=token)
+    try:
+        _probe_review_server(client=client, base_url=base_url)
+    except NengokError as exc:
+        _report_external_error(exc)
+        raise typer.Exit(code=1) from exc
+
+    NengokReviewApp(api_client=client).run()
+
+
+def _probe_review_server(*, client: Any, base_url: str) -> None:
+    """Hit `/health` once before launching the App so a bad URL fails loud."""
+    import asyncio
+
+    import httpx
+
+    try:
+        asyncio.run(client.ping())
+    except httpx.HTTPError as exc:
+        raise PhoenixConnectionError(
+            f"Nengok review could not reach the FastAPI server at {base_url}: {exc}. "
+            "Start it with `nengok dashboard --no-browser`, or pass --host/--port to target a remote instance."
+        ) from exc
 
 
 @app.command()
