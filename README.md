@@ -65,7 +65,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 - Arize Phoenix for observability (Python SDK + `@arizeai/phoenix-mcp@4.0.13`, CLI).
 - FastAPI bundled inside the SDK to serve the dashboard API.
 - Vite, React, TypeScript, and Tailwind for the frontend.
-- SQLite for cluster lifecycle state, via `nengok/state/store.py`.
+- SQLite (default) or any Postgres / MySQL via `DATABASE_URL`, served through `nengok/state/store.py`.
 - `pip install nengok` for local use; Cloud Run for the hackathon hosted URL.
 
 ## Quickstart
@@ -82,7 +82,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 pip install nengok
 ```
 
-For local development against this repo, see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+Nengok writes cluster state to `~/.nengok/state.db` (SQLite) on first run, so the default install has no database setup step. Point `DATABASE_URL` at Postgres or MySQL when you want shared state across pods; the optional `deploy/local/docker-compose.postgres.yml` and `deploy/local/docker-compose.mysql.yml` files bring a local instance up for backend testing. For local development against this repo, see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 ### 2. Configure
 
