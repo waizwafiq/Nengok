@@ -111,7 +111,52 @@ class PhoenixWrapper:
             method="spans.get_spans",
             timeout_seconds=self._config.phoenix_read_timeout_seconds,
         )
-        return [normalize_span(item) for item in raw]
+        spans = [normalize_span(item) for item in raw]
+        self._merge_span_annotations(client, project_identifier, spans)
+        return spans
+
+    def _merge_span_annotations(self, client: Any, project_identifier: str, spans: list[TraceSpan]) -> None:
+        """
+        Attach Phoenix span annotations onto each TraceSpan.
+
+        Phoenix's ``spans.get_spans`` returns no annotation data -- evals and
+        labels live behind a separate ``get_span_annotations`` call. Without
+        this merge the Observer's ``LOW_EVAL_SCORE`` signal can never fire, so
+        a span an evaluator flagged as wrong (but that still returned HTTP 200)
+        looks healthy and is never sampled. Each annotation is stored under its
+        name with its full result mapping (``{"score": ..., "label": ...}``) so
+        ``AnomalyFilter`` can read ``value["score"]`` unchanged.
+        """
+        span_ids = [s.span_id for s in spans if s.span_id]
+        if not span_ids:
+            return
+        try:
+            rows = self._call_with_timeout(
+                lambda: client.spans.get_span_annotations(
+                    project_identifier=project_identifier, span_ids=span_ids
+                ),
+                method="spans.get_span_annotations",
+                timeout_seconds=self._config.phoenix_read_timeout_seconds,
+            )
+        except Exception:
+            # Annotations are best-effort enrichment: a Phoenix that lacks the
+            # annotations endpoint (or a transient read error) must not sink the
+            # whole observer cycle, so we log and fall back to bare spans.
+            logger.debug("span annotation fetch failed; continuing without evals", exc_info=True)
+            return
+        by_span: dict[str, dict[str, Any]] = {}
+        for row in rows or []:
+            row_dict = row if isinstance(row, dict) else getattr(row, "__dict__", {})
+            span_id = row_dict.get("span_id")
+            name = row_dict.get("name")
+            if not span_id or not name:
+                continue
+            result = row_dict.get("result")
+            by_span.setdefault(span_id, {})[name] = result if isinstance(result, dict) else {"score": result}
+        for span in spans:
+            merged = by_span.get(span.span_id)
+            if merged:
+                span.annotations.update(merged)
 
     def get_spans_by_ids(
         self,
