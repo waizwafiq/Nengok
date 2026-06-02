@@ -117,12 +117,21 @@ nengok dashboard
 
 The dashboard renders every fix-proposed cluster (the proposed prompt diff, the regression dataset, the root-cause analysis) and gives you one-click approve / reject / dismiss.
 
+If you operate Nengok over SSH and would rather stay in the terminal, install the optional TUI extra and run `nengok review` in the same session:
+
+```bash
+pip install "nengok[tui]"
+nengok review
+```
+
+The TUI hits the same FastAPI routes the browser uses, and every decision lands in the same `nengok_approvals` table tagged with `source='tui'`. See [docs/tui-review.md](docs/tui-review.md) for keybindings and the audit-log contract.
+
 ## Project Layout
 
 ```
 nengok-codebase/
 ├── nengok/                # The SDK (pip install nengok)
-│   ├── cli.py             # nengok run, watch, dashboard, init
+│   ├── cli.py             # nengok run, watch, dashboard, review, init
 │   ├── config.py
 │   ├── core/              # Orchestrator + the four pipeline stages
 │   │   ├── observer/

@@ -10,6 +10,8 @@ Constructor overrides on `NengokConfig.load(...)` win over all three when the SD
 
 This page covers the database settings landed in Phase 14. The full configuration walkthrough (Phoenix wiring, Gemini models, redaction, dashboard auth, notifiers) lives in the broader docs tree and cross-links back here for the database story.
 
+Operators who run Nengok over SSH and would rather approve fixes from the terminal can launch the Textual TUI via `nengok review`. Install it as `pip install "nengok[tui]"` and see [docs/tui-review.md](tui-review.md) for keybindings, the audit-log contract (every TUI decision is recorded with `source='tui'`), and screenshots.
+
 ## State backend selection
 
 By default a fresh `pip install nengok && nengok run` writes cluster state to `~/.nengok/state.db` (SQLite). No docker, no `DATABASE_URL`, no wizard step. The default is intentional: every command in the README quickstart works on a laptop with nothing else installed.
