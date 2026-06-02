@@ -82,9 +82,31 @@ jobs:
       - name: mypy
         run: mypy nengok
 
-  test:
-    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
+  migration-namespace-lint:
+    name: Migration namespace linter
     needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
+        run: pip install -e ".[dev]"
+
+      - name: Run namespace linters (fail fast on guest-DB rule violations)
+        run: pytest tests/test_migration_namespace.py tests/test_alembic_version_namespace.py -v --tb=short
+
+  test:
+    name: pytest sqlite (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    needs: [check, migration-namespace-lint]
     if: needs.check.outputs.should_run == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
@@ -105,6 +127,96 @@ jobs:
         env:
           NENGOK_SKIP_FRONTEND_BUILD: "1"
         run: pip install -e ".[dev]"
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  test-postgres:
+    name: pytest postgres (Python 3.12, Ubuntu)
+    needs: [check, migration-namespace-lint]
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nengok
+          POSTGRES_PASSWORD: nengok
+          POSTGRES_DB: nengok
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nengok -d nengok"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://nengok:nengok@127.0.0.1:5432/nengok?sslmode=disable
+      NENGOK_TEST_POSTGRES_URL: postgresql+psycopg://nengok:nengok@127.0.0.1:5432/nengok?sslmode=disable
+      PHOENIX_BASE_URL: http://localhost:6006
+      GOOGLE_API_KEY: AIzaTEST-key-for-unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
+        run: pip install -e ".[dev]"
+
+      - name: Apply Alembic migrations against Postgres
+        run: nengok db migrate
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  test-mysql:
+    name: pytest mysql (Python 3.12, Ubuntu)
+    needs: [check, migration-namespace-lint]
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: nengok
+          MYSQL_USER: nengok
+          MYSQL_PASSWORD: nengok
+          MYSQL_DATABASE: nengok
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -unengok -pnengok"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: mysql+pymysql://nengok:nengok@127.0.0.1:3306/nengok
+      NENGOK_TEST_MYSQL_URL: mysql+pymysql://nengok:nengok@127.0.0.1:3306/nengok
+      NENGOK_DATABASE_ALLOW_PLAINTEXT: "1"
+      PHOENIX_BASE_URL: http://localhost:6006
+      GOOGLE_API_KEY: AIzaTEST-key-for-unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev extras
+        env:
+          NENGOK_SKIP_FRONTEND_BUILD: "1"
+        run: pip install -e ".[dev]"
+
+      - name: Apply Alembic migrations against MySQL
+        run: nengok db migrate
 
       - name: Run unit tests
         run: pytest tests/ -v --tb=short
