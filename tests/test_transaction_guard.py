@@ -15,6 +15,11 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip(
+    "google.genai.errors",
+    reason="google-genai not installed; this test needs the gemini extra.",
+)
+
 from nengok.config import NengokConfig
 from nengok.state.connection import ConnectionFactory, in_transaction
 from nengok.utils.gemini import call_gemini
