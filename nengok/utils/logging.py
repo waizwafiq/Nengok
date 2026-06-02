@@ -35,6 +35,8 @@ _REDACTION_PATTERN = re.compile(
     r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[=:]\s*(?:bearer\s+)?\S+"
 )
 
+_URL_PASSWORD_PATTERN = re.compile(r"(://[^:/?#@\s]+):([^@/?#\s]+)(@)")
+
 # Python logging level name -> Google Cloud Logging `severity` enum. The
 # standard level names already match the GCP enum; NOTSET maps to DEFAULT.
 _GCP_SEVERITY = {
@@ -64,20 +66,31 @@ class _RedactingFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):
-            record.msg = _REDACTION_PATTERN.sub(_redact_match, record.msg)
+            record.msg = _scrub(record.msg)
         if record.args:
             scrubbed: list[Any] = []
             for arg in record.args if isinstance(record.args, tuple) else (record.args,):
                 if isinstance(arg, str):
-                    scrubbed.append(_REDACTION_PATTERN.sub(_redact_match, arg))
+                    scrubbed.append(_scrub(arg))
                 else:
                     scrubbed.append(arg)
             record.args = tuple(scrubbed) if isinstance(record.args, tuple) else scrubbed[0]
         return True
 
 
+def _scrub(value: str) -> str:
+    """Apply every redaction pattern to `value` and return the masked result."""
+    value = _URL_PASSWORD_PATTERN.sub(_redact_url_password, value)
+    return _REDACTION_PATTERN.sub(_redact_match, value)
+
+
 def _redact_match(match: re.Match[str]) -> str:
     return f"{match.group(1)}=<redacted>"
+
+
+def _redact_url_password(match: re.Match[str]) -> str:
+    """Mask the password segment of a URL like `scheme://user:secret@host`."""
+    return f"{match.group(1)}:***{match.group(3)}"
 
 
 def configure_logging(

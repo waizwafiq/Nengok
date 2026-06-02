@@ -408,6 +408,55 @@ def test_run_probes_uses_callable_name(tmp_path: Path, monkeypatch: pytest.Monke
     assert "ValueError" in results[0].detail
 
 
+def test_doctor_text_output_includes_connection_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_env(monkeypatch)
+    _disable_dotenv(monkeypatch)
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[nengok]\n", encoding="utf-8")
+    monkeypatch.setattr("nengok.diagnostics.config_probe.DEFAULT_CONFIG_PATH", config_file)
+
+    config = _make_config(
+        tmp_path,
+        database_url="postgresql+psycopg://nengok:s3cret-canary@db.internal:5432/app",
+    )
+    _patch_load(monkeypatch, config)
+    _patch_doctor(monkeypatch, _stub_default_probes())
+
+    result = CliRunner().invoke(app, ["doctor"])
+    assert result.exit_code == 0
+    assert "Connection scope:" in result.output
+    assert "dialect: postgresql+psycopg" in result.output
+    assert "tls: require" in result.output
+    assert "s3cret-canary" not in result.output
+
+
+def test_doctor_json_output_includes_connection_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_env(monkeypatch)
+    _disable_dotenv(monkeypatch)
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[nengok]\n", encoding="utf-8")
+    monkeypatch.setattr("nengok.diagnostics.config_probe.DEFAULT_CONFIG_PATH", config_file)
+
+    config = _make_config(
+        tmp_path,
+        database_url="postgresql+psycopg://nengok:s3cret-canary@db.internal:5432/app",
+    )
+    _patch_load(monkeypatch, config)
+    _patch_doctor(monkeypatch, _stub_default_probes())
+
+    result = CliRunner().invoke(app, ["doctor", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    scope = payload["connection_scope"]
+    assert scope["dialect"] == "postgresql+psycopg"
+    assert scope["database"] == "app"
+    assert "s3cret-canary" not in result.output
+
+
 def test_doctor_handles_unicode_in_detail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Make sure the JSON serializer survives non-ASCII detail text."""
     _isolate_env(monkeypatch)

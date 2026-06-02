@@ -14,6 +14,10 @@ from nengok import templates
 
 SECRET_FIELD_PATTERN = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization)")
 
+URL_FIELD_PATTERN = re.compile(r"(?i)_url$")
+
+_URL_CREDENTIAL_PATTERN = re.compile(r"(://[^:/?#@\s]+):([^@/?#\s]+)(@)")
+
 
 def write_config_file(
     *,
@@ -154,6 +158,20 @@ def mask_secret(value: str | None) -> str:
     return f"{value[:4]}****{value[-4:]}"
 
 
+def mask_url_password(value: str | None) -> str:
+    """
+    Mask the password segment of a URL-shaped value as `scheme://user:***@host`.
+
+    Returns `<unset>` for `None` and leaves URLs without an embedded
+    password (SQLite local files, anonymous endpoints) unchanged.
+    """
+    if value is None:
+        return "<unset>"
+    if not isinstance(value, str):
+        value = str(value)
+    return _URL_CREDENTIAL_PATTERN.sub(r"\1:***\3", value)
+
+
 def format_config_for_display(config: Any) -> str:
     """
     Render the loaded config as `key = value` lines with secrets masked.
@@ -172,6 +190,8 @@ def format_config_for_display(config: Any) -> str:
         value = getattr(config, f.name)
         if SECRET_FIELD_PATTERN.search(f.name):
             rendered = mask_secret(value if isinstance(value, str) else None)
+        elif URL_FIELD_PATTERN.search(f.name) and isinstance(value, str):
+            rendered = repr(mask_url_password(value))
         elif value is None:
             rendered = "<unset>"
         else:

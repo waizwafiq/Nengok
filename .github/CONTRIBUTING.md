@@ -113,6 +113,14 @@ By default Nengok keeps cluster and approval state in a SQLite file at `~/.nengo
 
 The engine is built once per process via `ConnectionFactory` in [nengok/state/connection.py](../nengok/state/connection.py) with `pool_size=5` and `max_overflow=5`, so Nengok holds at most ten connections at peak against a database it shares with your application.
 
+For non-loopback Postgres URLs without an explicit `sslmode`, the factory appends `sslmode=require`; MySQL gets the PyMySQL `ssl=true` equivalent; loopback hosts are left alone. Set `database_allow_plaintext = true` (or `NENGOK_DATABASE_ALLOW_PLAINTEXT=1`) to skip the rewrite for an internal test network, and Nengok logs a WARNING that names the host on every startup so a misconfigured production deployment is loud rather than silent. SQLite uses a local file and bypasses TLS.
+
+`call_gemini` refuses to run inside `ConnectionFactory.begin()`. A 45-second Gemini timeout under an open transaction would hold a row lock against the operator's pool, so the guard fires at the call site with `RuntimeError("Cannot call Gemini from inside a database transaction; close the transaction first")`. Code paths that need both must close the transaction, call Gemini, then open a new transaction for the result.
+
+`DATABASE_URL` passwords are masked everywhere they could leak. The redacting log filter scrubs `scheme://user:password@host` segments before a record reaches a handler, `nengok config show` renders the URL as `postgresql://user:***@host:5432/db`, and SQLAlchemy engine references go through `engine.url.render_as_string(hide_password=True)` rather than bare `str(engine)`. The regression at [tests/test_database_url_redaction.py](../tests/test_database_url_redaction.py) drives a forced connection failure with a sentinel password and asserts the byte string does not appear in any captured log, exception, or `config show` line.
+
+`nengok doctor` extends the privilege probe at [nengok/diagnostics/db_privileges.py](../nengok/diagnostics/db_privileges.py) to refuse over-broad grants (Postgres SUPERUSER/CREATEDB/CREATEROLE; MySQL ALL PRIVILEGES, SUPER, DROP on `*.*`) and prints the resolved connection scope (dialect, masked host, port, user, database, TLS posture, privilege outcome) at the end of the report. The least-privilege snippets per dialect live in [docs/database-grants.md](../docs/database-grants.md) alongside the backup contract (Nengok does not back up your database; operators own durability and recovery).
+
 #### Swapping the LLMs
 
 The four Gemini models in the loop are all overridable via environment variables, so you can run the SDK against a different snapshot (or a non-public preview) without editing source or `~/.nengok/config.toml`:
@@ -236,6 +244,8 @@ Schema for the state store lives in [nengok/state/alembic/versions/](../nengok/s
 For full Postgres isolation, set `database_schema = "nengok"` in `~/.nengok/config.toml` (or export `NENGOK_DATABASE_SCHEMA=nengok`). Every Nengok table, every index, and the bookkeeping row then land in the named schema rather than `public`. SQLite ignores the setting. The grant trade-off is documented in [docs/database-grants.md](../docs/database-grants.md).
 
 Three CLI helpers wrap the migrator. `nengok db migrate` runs `alembic upgrade head` against the configured database and prints either the new revision or `up to date`. `nengok db status` lists every packaged revision and marks which one the live database is stamped at. `nengok db check` exits 1 when the live revision does not match the packaged head, which makes a good gate for CI on the state package. To add a column or table, generate a new revision file under `alembic/versions/` and ship it in the same PR as the code that reads the new field; do not rewrite an earlier revision.
+
+The static linter at [tests/test_migration_namespace.py](../tests/test_migration_namespace.py) walks every revision module and refuses any `op.create_table` / `op.drop_table` / `op.rename_table` / `op.execute(...)` that names a table outside the `nengok_` prefix. It also rejects any raw SQL containing `DROP DATABASE` or `DROP SCHEMA`, and rejects `TRUNCATE` of any table outside the namespace. The four pre-namespace revisions (`0001` through `0004`) are on a short allowlist because they predate the prefix; every new revision must comply. CI runs the linter so a misnamed table fails at PR time rather than after the migration has shipped to an operator's database.
 
 #### Approval audit log
 
