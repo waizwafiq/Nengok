@@ -30,10 +30,16 @@ jobs:
     steps:
       - name: Check commit message
         id: commit_check
+        env:
+          # Pass the head-commit message via env, never via `${{ ... }}`
+          # interpolation into the script. Squash-merge commit messages are
+          # multi-line and frequently contain code fragments; inlining them
+          # into a bash heredoc executes those fragments as shell commands
+          # (and is a script-injection vector).
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          if echo "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
-            echo "Skipping CI — docs-only commit"
+          if printf '%s\n' "$COMMIT_MSG" | head -1 | grep -qiE '^docs(\(.*\))?:'; then
+            echo "Skipping CI (docs-only commit)"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=true" >> "$GITHUB_OUTPUT"
