@@ -85,6 +85,9 @@ adk = [
     # toolset import fails without it.
     "google-adk[mcp]==2.2.0",
 ]
+slack = [
+    "slack-bolt>=1.18.0",
+]
 dev = [
     "ruff==0.6.9",
     "mypy>=1.11.0",

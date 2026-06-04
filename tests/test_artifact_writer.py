@@ -234,7 +234,7 @@ def test_write_is_idempotent_across_repeat_calls(tmp_path: Path) -> None:
 
     cluster_dir = tmp_path / cluster.cluster_id
     children = sorted(p.name for p in cluster_dir.iterdir())
-    assert children == ["prompt.md", "rca.md", "regression.json"]
+    assert children == ["manifest.json", "prompt.md", "rca.md", "regression.json"]
 
 
 def test_failed_verification_still_writes_full_artifact_bundle(tmp_path: Path) -> None:

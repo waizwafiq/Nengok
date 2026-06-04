@@ -41,12 +41,20 @@ from nengok.core.types import (
     CycleRecord,
     CycleResult,
     CycleStatus,
+    ExperimentResult,
     FixArtifact,
     VerificationOutcome,
 )
 from nengok.core.verifier.artifact_writer import ArtifactWriter
 from nengok.core.verifier.gate import VerifierGate
-from nengok.errors import OptionalDependencyError, PhoenixTimeoutError, TriageError
+from nengok.errors import (
+    NotifierLoadError,
+    OptionalDependencyError,
+    PhoenixTimeoutError,
+    TriageError,
+)
+from nengok.notifiers.dispatcher import NotifierDispatcher
+from nengok.notifiers.events import ExperimentSummary, FixProposedEvent
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.phoenix.mcp import MCPError
 from nengok.runners.agent_runner import register_runner
@@ -86,6 +94,7 @@ class Orchestrator:
 
         self._gate = VerifierGate(self.config)
         self._artifact_writer = ArtifactWriter(self.config.artifacts_dir, redactor=self._redactor)
+        self._notifier_dispatcher = self._build_notifier_dispatcher()
 
     def _ensure_runner_registered(self) -> None:
         """
@@ -302,6 +311,10 @@ class Orchestrator:
                                 )
                                 artifacts.append(artifact)
                                 self._state.mark_status(cluster.cluster_id, ClusterStatus.FIX_PROPOSED)
+                                if self._notifier_dispatcher:
+                                    self._notifier_dispatcher.dispatch(
+                                        self._build_fix_proposed_event(cluster, result, artifact)
+                                    )
                             else:
                                 escalations += 1
                                 self._state.mark_status(cluster.cluster_id, ClusterStatus.ESCALATED)
@@ -534,6 +547,48 @@ class Orchestrator:
             self.config.gemini_cycle_token_budget,
             cost_tracker.dollars_used,
             len(skipped_cluster_ids),
+        )
+
+    def _build_notifier_dispatcher(self) -> NotifierDispatcher | None:
+        if not self.config.notifiers:
+            return None
+        try:
+            return NotifierDispatcher.from_config(config=self.config, store=self._state)
+        except NotifierLoadError as exc:
+            logger.error("Notifier configuration error: %s", exc)
+            raise
+
+    def _build_fix_proposed_event(
+        self,
+        cluster: Cluster,
+        result: ExperimentResult,
+        artifact: FixArtifact,
+    ) -> FixProposedEvent:
+        h = cluster.hypothesis
+        raw_summary = h.summary if h else None
+        summary = self._redactor.redact(raw_summary) if raw_summary else None
+        if summary and len(summary) > self.config.slack_max_summary_chars:
+            summary = summary[: self.config.slack_max_summary_chars]
+
+        dashboard_url = (
+            f"{self.config.slack_dashboard_base_url.rstrip('/')}/clusters/{cluster.cluster_id}"
+            if self.config.slack_dashboard_base_url
+            else None
+        )
+
+        return FixProposedEvent(
+            cluster_id=cluster.cluster_id,
+            cluster_name=cluster.name,
+            status=ClusterStatus.FIX_PROPOSED.value,
+            hypothesis_summary=summary,
+            experiment_summary=ExperimentSummary(
+                baseline_pass_rate=result.baseline_pass_rate,
+                fix_pass_rate=result.fix_pass_rate,
+                golden_baseline_pass_rate=result.golden_baseline_pass_rate,
+                golden_fix_pass_rate=result.golden_fix_pass_rate,
+            ),
+            artifact_manifest_ref=str(artifact.prompt_path).replace("prompt.md", "manifest.json"),
+            dashboard_url=dashboard_url,
         )
 
     def _record_phoenix_timeout(self, *, cluster: Cluster, exc: PhoenixTimeoutError) -> None:

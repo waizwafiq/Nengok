@@ -21,6 +21,7 @@ from pathlib import Path
 
 from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, FixArtifact, PromptProposal, RegressionTestCase, Verification
+from nengok.core.verifier.manifest import write_manifest
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,6 +57,12 @@ class ArtifactWriter:
         rca_path.write_text(
             _render_rca(cluster, proposal, verification, redactor),
             encoding="utf-8",
+        )
+
+        write_manifest(
+            cluster_dir,
+            cluster_id=cluster.cluster_id,
+            artifact_paths=[prompt_path, dataset_path, rca_path],
         )
 
         logger.info("Wrote artifacts for cluster '%s' to %s", cluster.name, cluster_dir)

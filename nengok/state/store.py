@@ -530,6 +530,86 @@ class StateStore:
             "recent_cycle_status_counts": recent_status_counts,
         }
 
+    def insert_notification_pending(
+        self, *, notifier_name: str, event_kind: str, subject_id: str
+    ) -> str | None:
+        """Insert a pending notification row. Returns notification_id, or None if already exists."""
+        notification_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO nengok_notifications
+                      (notification_id, notifier_name, event_kind, subject_id,
+                       status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (notification_id, notifier_name, event_kind, subject_id, now, now),
+                )
+            except sqlite3.IntegrityError:
+                return None
+        return notification_id
+
+    def mark_notification_sent(self, *, notification_id: str, notifier_state: dict | None) -> None:
+        now = datetime.now(UTC).isoformat()
+        state_json = json.dumps(notifier_state) if notifier_state is not None else None
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE nengok_notifications SET status='sent', notifier_state=?, updated_at=? "
+                "WHERE notification_id=?",
+                (state_json, now, notification_id),
+            )
+
+    def mark_notification_failed(self, *, notification_id: str, last_error: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE nengok_notifications SET status='failed', last_error=?, updated_at=? "
+                "WHERE notification_id=?",
+                (last_error, now, notification_id),
+            )
+
+    def mark_notification_update_failed(self, *, notification_id: str, last_error: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE nengok_notifications SET status='update_failed', last_error=?, updated_at=? "
+                "WHERE notification_id=?",
+                (last_error, now, notification_id),
+            )
+
+    def get_notification(self, *, notifier_name: str, event_kind: str, subject_id: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT notification_id, notifier_name, event_kind, subject_id,
+                       status, notifier_state, last_error, created_at, updated_at
+                FROM nengok_notifications
+                WHERE notifier_name = ? AND event_kind = ? AND subject_id = ?
+                """,
+                (notifier_name, event_kind, subject_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_pending_review_items(self) -> list[dict]:
+        """Return fix_proposed clusters joined with their notification context."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.cluster_id, c.name, c.description, c.status,
+                       c.hypothesis_json, c.created_at, c.updated_at,
+                       n.notification_id, n.notifier_name, n.event_kind,
+                       n.status AS notification_status, n.notifier_state
+                FROM nengok_clusters c
+                LEFT JOIN nengok_notifications n
+                    ON n.subject_id = c.cluster_id AND n.event_kind = 'fix_proposed'
+                WHERE c.status = 'fix_proposed'
+                ORDER BY c.updated_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def latest_experiment(self, cluster_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
