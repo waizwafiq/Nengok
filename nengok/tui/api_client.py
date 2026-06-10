@@ -118,12 +118,15 @@ class TuiApiClient:
         reviewer: str | None,
         reason: str | None,
         source: str = APPROVAL_SOURCE_TUI,
+        feedback_tag: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"decision": decision, "source": source}
         if reviewer is not None:
             body["reviewer"] = reviewer
         if reason is not None:
             body["reason"] = reason
+        if feedback_tag is not None:
+            body["feedback_tag"] = feedback_tag
         async with self._client() as client:
             response = await client.post(
                 f"/api/v1/clusters/{cluster_id}/approvals",

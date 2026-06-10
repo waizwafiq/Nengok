@@ -14,12 +14,18 @@ from textual.app import ComposeResult
 from textual.binding import BindingType
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, Select, Static
 
 from nengok.tui.api_client import APPROVAL_SOURCE_TUI, TuiApiError
 
 if TYPE_CHECKING:
     from nengok.tui.app import NengokReviewApp
+
+FEEDBACK_TAG_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Duplicate cluster", "duplicate_cluster"),
+    ("Mixed root causes", "mixed_root_causes"),
+    ("Not a failure", "not_a_failure"),
+)
 
 
 class ApprovalModalScreen(ModalScreen[bool]):
@@ -35,6 +41,7 @@ class ApprovalModalScreen(ModalScreen[bool]):
         self.decision = decision
         self._status: Static | None = None
         self._reason_input: Input | None = None
+        self._tag_select: Select[str] | None = None
 
     def compose(self) -> ComposeResult:
         verb = "Approve" if self.decision == "approved" else "Reject"
@@ -43,6 +50,13 @@ class ApprovalModalScreen(ModalScreen[bool]):
             yield Static("Reason (optional, one line):")
             self._reason_input = Input(placeholder="why this decision", id="approval-reason")
             yield self._reason_input
+            yield Static("Clustering feedback (optional):")
+            self._tag_select = Select(
+                FEEDBACK_TAG_OPTIONS,
+                prompt="No clustering feedback",
+                id="approval-feedback-tag",
+            )
+            yield self._tag_select
             yield Button("Submit", id="approval-submit", variant="primary")
             yield Button("Cancel", id="approval-cancel")
             self._status = Static("", id="approval-status")
@@ -66,6 +80,9 @@ class ApprovalModalScreen(ModalScreen[bool]):
     async def _submit(self) -> None:
         app = _app(self)
         reason = (self._reason_input.value if self._reason_input else "").strip() or None
+        feedback_tag: str | None = None
+        if self._tag_select is not None and self._tag_select.value is not Select.BLANK:
+            feedback_tag = str(self._tag_select.value)
         if self._status is not None:
             self._status.update("Submitting...")
         try:
@@ -75,6 +92,7 @@ class ApprovalModalScreen(ModalScreen[bool]):
                 reviewer=None,
                 reason=reason,
                 source=APPROVAL_SOURCE_TUI,
+                feedback_tag=feedback_tag,
             )
         except TuiApiError as exc:
             if self._status is not None:
