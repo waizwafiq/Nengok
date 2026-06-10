@@ -86,7 +86,7 @@ class Clusterer:
         clusters: list[Cluster] = []
         for group in groups:
             members = [a.span.span_id for a in group.members]
-            exemplars = members[: min(5, len(members))]
+            exemplars = _select_exemplars(group.members)
             clusters.append(
                 Cluster(
                     cluster_id=str(uuid.uuid4()),
@@ -157,6 +157,34 @@ class Clusterer:
             retry_policy=RetryPolicy.from_config(self.config),
             cost_tracker=self.cost_tracker,
         )
+
+
+MAX_EXEMPLARS = 5
+
+
+def _select_exemplars(members: list[AnomalousSpan], limit: int = MAX_EXEMPLARS) -> list[str]:
+    """
+    Pick exemplar span ids spread across distinct signal sets and operations.
+
+    Round-robins over each (signal set, operation name) profile in
+    first-seen order so the hypothesizer sees the cluster's variety
+    rather than its head.
+    """
+    buckets: dict[tuple[tuple[str, ...], str], list[str]] = {}
+    for anomaly in members:
+        key = (tuple(sorted(s.value for s in anomaly.signals)), anomaly.span.name)
+        buckets.setdefault(key, []).append(anomaly.span.span_id)
+
+    exemplars: list[str] = []
+    queues = list(buckets.values())
+    while queues and len(exemplars) < limit:
+        for queue in list(queues):
+            if len(exemplars) >= limit:
+                break
+            exemplars.append(queue.pop(0))
+            if not queue:
+                queues.remove(queue)
+    return exemplars
 
 
 def _build_clusterer_prompt(

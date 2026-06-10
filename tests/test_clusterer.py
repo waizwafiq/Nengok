@@ -143,6 +143,37 @@ def test_prompt_includes_trimmed_trace_bodies(tmp_config: NengokConfig) -> None:
     assert "<truncated>" in captured["prompt"]
 
 
+def test_exemplars_spread_across_signal_sets_and_operations(tmp_config: NengokConfig) -> None:
+    anomalies = [
+        _anomaly("s0"),
+        _anomaly("s1"),
+        _anomaly("s2"),
+        _anomaly("s3"),
+        _anomaly("s4", name="tool.flights.search"),
+        _anomaly("s5", name="tool.weather.lookup"),
+    ]
+    anomalies[3] = AnomalousSpan(span=anomalies[3].span, signals=[AnomalySignal.HIGH_LATENCY])
+
+    fake_groups = [
+        {
+            "name": "mixed-profiles",
+            "description": "One failure mode hitting several operations.",
+            "member_span_ids": [f"s{i}" for i in range(6)],
+        }
+    ]
+
+    def fake_gemini(_prompt: str) -> str:
+        return _fake_response(fake_groups)
+
+    clusters = Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
+
+    exemplars = clusters[0].exemplar_span_ids
+    assert len(exemplars) == 5
+    assert "s3" in exemplars
+    assert "s4" in exemplars
+    assert "s5" in exemplars
+
+
 def test_cluster_retries_once_on_invalid_json(tmp_config: NengokConfig) -> None:
     anomalies = [_anomaly("s1")]
     responses = iter(
