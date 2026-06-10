@@ -61,8 +61,10 @@ the existing Phoenix API key surface; it introduces no new credential
 boundary. The `McpToolset` passes the key to the Phoenix MCP subprocess
 through environment variables, the same channel the preflight check
 already uses, so the key stays out of process argument lists. Span text
-the agent reads through MCP stays between Phoenix and the local process;
-only the agent's own tool-call reasoning reaches Gemini.
+the agent reads through MCP does re-enter the model context as tool
+results, so an `after_tool_callback` on the agent runs every string in
+every tool response through the same `Redactor` the pipeline uses
+before Gemini sees it.
 
 ## What you should do before production
 

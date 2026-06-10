@@ -26,11 +26,12 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nengok.config import NengokConfig
+from nengok.core.observer.redactor import Redactor
 from nengok.errors import OptionalDependencyError, TriageError
 from nengok.phoenix.mcp import MCPError
 from nengok.utils.logging import get_logger
@@ -205,18 +206,41 @@ def _build_runner(config: NengokConfig) -> Any:
         )
     )
 
+    # MCP tool results carry span text and re-enter the model context, so
+    # they pass through the same Redactor every other Gemini call site
+    # uses before any of it leaves the local process.
+    redactor = Redactor.from_config(config)
+
+    def _redact_tool_response(
+        tool: Any, args: dict[str, Any], tool_context: Any, tool_response: dict[str, Any]
+    ) -> dict[str, Any]:
+        del tool, args, tool_context
+        return cast(dict[str, Any], redact_tool_payload(tool_response, redactor))
+
     agent = LlmAgent(
         model=config.triage_model,
         name=TRIAGE_AGENT_NAME,
         instruction=_load_triage_prompt(),
         tools=[phoenix_mcp],
         output_schema=TriageVerdict,
+        after_tool_callback=_redact_tool_response,
     )
     return Runner(
         app_name=TRIAGE_APP_NAME,
         agent=agent,
         session_service=InMemorySessionService(),
     )
+
+
+def redact_tool_payload(value: Any, redactor: Redactor) -> Any:
+    """Redact every string inside a tool response, preserving its shape."""
+    if isinstance(value, str):
+        return redactor.redact(value)
+    if isinstance(value, dict):
+        return {key: redact_tool_payload(item, redactor) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_tool_payload(item, redactor) for item in value]
+    return value
 
 
 def _mcp_env(config: NengokConfig) -> dict[str, str]:

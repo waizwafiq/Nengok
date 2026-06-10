@@ -254,3 +254,28 @@ def test_adk_available_matches_find_spec() -> None:
     import importlib.util
 
     assert adk_available() == (importlib.util.find_spec("google.adk") is not None)
+
+
+def test_redact_tool_payload_scrubs_nested_strings() -> None:
+    from nengok.agents.triage import redact_tool_payload
+    from nengok.core.observer.redactor import Redactor
+
+    redactor = Redactor.from_config(_config())
+    payload = {
+        "content": [
+            {
+                "type": "text",
+                "text": "contact user@example.com about key AIzaSyD1234567890abcdefghijklmnopqrstuvw",
+            }
+        ],
+        "count": 3,
+        "nested": {"note": "card 4111-1111-1111-1111"},
+    }
+
+    redacted = redact_tool_payload(payload, redactor)
+
+    flat = json.dumps(redacted)
+    assert "user@example.com" not in flat
+    assert "4111-1111-1111-1111" not in flat
+    assert redacted["count"] == 3
+    assert redacted["content"][0]["type"] == "text"
