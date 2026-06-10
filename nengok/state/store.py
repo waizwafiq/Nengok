@@ -463,6 +463,110 @@ class StateStore:
             )
         return detached
 
+    def record_clustering_advice(
+        self,
+        *,
+        project: str | None,
+        prompt_amendment: str,
+        metrics_json: str | None,
+    ) -> str:
+        advice_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO nengok_clustering_advice
+                  (advice_id, project, status, prompt_amendment, metrics_json, created_at)
+                VALUES (?, ?, 'proposed', ?, ?, ?)
+                """,
+                (advice_id, project, prompt_amendment, metrics_json, now),
+            )
+        return advice_id
+
+    def list_clustering_advice(self, *, project: str | None = None, status: str | None = None) -> list[dict]:
+        sql = """
+            SELECT advice_id, project, status, prompt_amendment, metrics_json,
+                   created_at, decided_by, decided_at
+            FROM nengok_clustering_advice
+        """
+        clauses: list[str] = []
+        params: list = []
+        if project is not None:
+            clauses.append("(project = ? OR project IS NULL)")
+            params.append(project)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC, advice_id DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_active_advice(self, project: str | None) -> dict | None:
+        rows = self.list_clustering_advice(project=project, status="active")
+        return rows[0] if rows else None
+
+    def activate_clustering_advice(self, *, advice_id: str, decided_by: str) -> dict | None:
+        """
+        Flip one proposed advice row to active, retiring any prior active
+        row for the same project so at most one amendment applies.
+        """
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT advice_id, project FROM nengok_clustering_advice WHERE advice_id = ?",
+                (advice_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            project = row["project"]
+            if project is None:
+                conn.execute(
+                    "UPDATE nengok_clustering_advice SET status = 'retired', decided_at = ? "
+                    "WHERE status = 'active' AND project IS NULL",
+                    (now,),
+                )
+            else:
+                conn.execute(
+                    "UPDATE nengok_clustering_advice SET status = 'retired', decided_at = ? "
+                    "WHERE status = 'active' AND project = ?",
+                    (now, project),
+                )
+            conn.execute(
+                """
+                UPDATE nengok_clustering_advice
+                SET status = 'active', decided_by = ?, decided_at = ?
+                WHERE advice_id = ?
+                """,
+                (decided_by, now, advice_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT advice_id, project, status, prompt_amendment, metrics_json,
+                       created_at, decided_by, decided_at
+                FROM nengok_clustering_advice WHERE advice_id = ?
+                """,
+                (advice_id,),
+            ).fetchone()
+        return dict(updated) if updated else None
+
+    def list_cluster_links_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            "SELECT link_id, cluster_id_a, cluster_id_b, confidence, rationale, created_at "
+            "FROM nengok_cluster_links",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, link_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def list_clusters_between(
         self, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[dict]:
