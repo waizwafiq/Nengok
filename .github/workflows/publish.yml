@@ -2,6 +2,8 @@ name: Publish to PyPI
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -34,9 +36,35 @@ jobs:
           name: dist
           path: dist/
 
+  # Dry run on every main push so the first tagged release is not the first
+  # time the publish path executes. skip-existing tolerates re-uploads of the
+  # same version between releases.
+  publish-testpypi:
+    name: Dry-run publish to TestPyPI
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/nengok/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
   publish:
     name: Publish to PyPI
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -51,3 +79,46 @@ jobs:
 
       - name: Publish via trusted publishing
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Draft GitHub Release
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Quote the changelog entry for this tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > release-body.md
+          if ! [ -s release-body.md ]; then
+            echo "CHANGELOG.md has no entry for ${VERSION}; add one before tagging." >&2
+            exit 1
+          fi
+          {
+            echo ""
+            echo "Install with \`pip install nengok==${VERSION}\`."
+            echo ""
+            echo "PyPI: <https://pypi.org/project/nengok/${VERSION}/>"
+          } >> release-body.md
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft \
+            --title "nengok $GITHUB_REF_NAME" \
+            --notes-file release-body.md

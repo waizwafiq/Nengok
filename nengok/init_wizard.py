@@ -230,6 +230,13 @@ def probe_gemini(
 
     try:
         ping(api_key)
+    except OptionalDependencyError as exc:
+        return ProbeResult(
+            name="gemini",
+            ok=False,
+            detail=str(exc),
+            fix_hint=f"Run `{exc.install_hint}` and rerun the wizard.",
+        )
     except Exception as exc:
         return ProbeResult(
             name="gemini",
