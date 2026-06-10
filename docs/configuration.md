@@ -12,6 +12,8 @@ This page covers the database settings landed in Phase 14. The full configuratio
 
 Operators who run Nengok over SSH and would rather approve fixes from the terminal can launch the Textual TUI via `nengok review`. Install it as `pip install "nengok[tui]"` and see [docs/tui-review.md](tui-review.md) for keybindings, the audit-log contract (every TUI decision is recorded with `source='tui'`), and screenshots.
 
+The ADK triage agent that gates each cycle has its own knobs (`triage_enabled`, `triage_model`, `triage_timeout_seconds`, `triage_lookback_minutes`, each with a matching `NENGOK_TRIAGE_*` env var). Those are documented with the agent itself in [docs/agent-builder.md](agent-builder.md), alongside the `--no-triage` flag and the fallback contract.
+
 ## State backend selection
 
 By default a fresh `pip install nengok && nengok run` writes cluster state to `~/.nengok/state.db` (SQLite). No docker, no `DATABASE_URL`, no wizard step. The default is intentional: every command in the README quickstart works on a laptop with nothing else installed.

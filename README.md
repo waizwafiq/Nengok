@@ -102,7 +102,7 @@ export GOOGLE_API_KEY=...
 nengok run
 ```
 
-This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass.
+This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass. With the `adk` extra installed, the cycle opens with the triage agent described in [docs/agent-builder.md](docs/agent-builder.md); pass `--no-triage` to skip it.
 
 ### 4. Watch continuously (optional)
 
