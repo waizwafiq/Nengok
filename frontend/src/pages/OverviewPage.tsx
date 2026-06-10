@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchDashboardOverview } from "../api/dashboard";
 import { fetchClusters } from "../api/clusters";
+import { AdvicePanel } from "../components/AdvicePanel";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
@@ -147,6 +148,8 @@ export function OverviewPage() {
         <CycleSpendCard cycles={data.recent_cycles ?? []} />
         <CycleStatusCard counts={data.recent_cycle_status_counts ?? {}} />
       </section>
+
+      <AdvicePanel />
     </div>
   );
 }
