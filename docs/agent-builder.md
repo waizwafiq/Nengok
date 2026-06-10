@@ -1,6 +1,6 @@
 # The ADK triage agent
 
-Every Nengok cycle opens with a triage step before the Observer pulls a single span. The step is an `LlmAgent` from the Google Agent Development Kit (ADK), defined in [nengok/agents/triage.py](../nengok/agents/triage.py) and armed with one tool: a `McpToolset` that spawns the Arize Phoenix MCP server (`@arizeai/phoenix-mcp`, pinned to the same version the preflight check uses). The agent inspects the last few minutes of traffic in the configured project through Phoenix MCP tools and returns a verdict: wake the full deterministic pipeline, or let this cycle sleep.
+Every Nengok cycle opens with a triage step before the Observer pulls a single span. The step is an `LlmAgent` from the Google Agent Development Kit (ADK), the agent framework in [Google Cloud's Agent Builder suite](https://cloud.google.com/products/agent-builder), defined in [nengok/agents/triage.py](../nengok/agents/triage.py) and armed with one tool: a `McpToolset` that spawns the Arize Phoenix MCP server (`@arizeai/phoenix-mcp`, pinned to the same version the preflight check uses). The agent inspects the last few minutes of traffic in the configured project through Phoenix MCP tools and returns a verdict: wake the full deterministic pipeline, or let this cycle sleep.
 
 The Diagnoser, Fixer, and Verifier stay deterministic on purpose. The triage gate is the single ADK surface in the loop, and it is load-bearing: when it says skip, the cycle records `skipped_by_triage` and ends without touching Phoenix again.
 
@@ -24,6 +24,7 @@ The agent must answer with a single JSON object that validates against `TriageVe
 |---|---|---|
 | `investigate` | bool | Whether the deterministic pipeline should run this cycle. |
 | `project` | str | The Phoenix project the Observer should read. |
+| `projects` | list of str | On a multi-project install, the subset of projects worth investigating this cycle; the orchestrator narrows the cycle to these. |
 | `window_minutes` | int (1 to 240) | The time window the Observer should narrow to. |
 | `reason` | str (280 chars max) | One sentence the operator can read in the log. |
 | `signals` | list of str | Names of the signals the agent saw firing. |
@@ -39,7 +40,7 @@ Unknown fields are rejected (`extra='forbid'`), and a verdict that fails validat
 | `triage_timeout_seconds` | `NENGOK_TRIAGE_TIMEOUT_SECONDS` | `30.0` | Wall-clock budget for the whole triage pass, MCP subprocess spawn included. |
 | `triage_lookback_minutes` | `NENGOK_TRIAGE_LOOKBACK_MINUTES` | `15` | The window the agent is asked to inspect, and the fallback verdict's window. |
 
-`nengok run --no-triage` and `nengok watch --no-triage` skip the gate for one invocation without touching config. This is useful when you want the deterministic path on every cycle, for example while recording a demo and not wanting to wait for the agent to think.
+`nengok run --no-triage` and `nengok watch --no-triage` skip the gate for one invocation without touching config. This is useful when you want the deterministic path on every cycle, for example while bisecting an Observer or Diagnoser problem that has nothing to do with triage.
 
 ## Fallback behavior
 

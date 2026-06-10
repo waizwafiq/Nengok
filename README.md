@@ -7,12 +7,12 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Built on](https://img.shields.io/badge/built%20on-Arize%20Phoenix-orange)](https://github.com/Arize-ai/phoenix)
 
-Nengok (Malay: *"to watch over"*) is a pip-installable SDK that **autonomously detects, diagnoses, and fixes silent failures** in AI agents. It connects to *your* Arize Phoenix instance, samples production traces, clusters failure patterns, generates regression tests from real failures, runs controlled experiments to verify fixes, and presents verified solutions for human approval. Every cycle opens with an ADK `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) that reads recent traffic through the Arize Phoenix MCP server (`McpToolset` running `@arizeai/phoenix-mcp`) and decides whether the full pipeline should wake. Diagnosis runs Gemini 3.1 Pro via `google-genai` on Vertex AI, and the hosted demo lives on Cloud Run.
+Nengok (Malay: *"to watch over"*) is a pip-installable SDK that **autonomously detects, diagnoses, and fixes silent failures** in AI agents. It connects to *your* Arize Phoenix instance, samples production traces, clusters failure patterns, generates regression tests from real failures, runs controlled experiments to verify fixes, and presents verified solutions for human approval. Every cycle opens with an `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) built on the Agent Development Kit (ADK), the agent framework in Google Cloud's Agent Builder suite, that reads recent traffic through the Arize Phoenix MCP server (`McpToolset` running `@arizeai/phoenix-mcp`) and decides whether the full pipeline should wake. Diagnosis runs Gemini 3.1 Pro via `google-genai` (an AI Studio key locally, Vertex AI on Cloud Run), and the hosted demo lives on Cloud Run.
 
 **Trace data never leaves your infrastructure.** Nengok runs locally next to your Phoenix instance, calls your Gemini key, and writes fix artifacts to your local filesystem.
 
 ```
-$ pip install nengok
+$ pip install "nengok[gemini,phoenix,adk]"
 $ nengok init --phoenix-url http://localhost:6006
 $ nengok run
 
@@ -65,7 +65,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 
 - Python 3.11+ for the SDK and engine, TypeScript for the dashboard.
 - Gemini 3.1 for reasoning (`gemini-3.1-pro-preview`) and LLM-as-Judge (`gemini-3-flash-preview`).
-- ADK `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) gates every cycle through the Arize Phoenix MCP server (`McpToolset` → `@arizeai/phoenix-mcp`); diagnosis runs Gemini 3.1 Pro via `google-genai` on Vertex AI; hosted on Cloud Run.
+- ADK `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) gates every cycle through the Arize Phoenix MCP server (`McpToolset` → `@arizeai/phoenix-mcp`). ADK is the agent framework in Google Cloud's Agent Builder suite. Diagnosis runs Gemini 3.1 Pro via `google-genai`, against an AI Studio key locally or Vertex AI on Cloud Run.
 - Arize Phoenix for observability (Python SDK + `@arizeai/phoenix-mcp@4.0.13`, CLI).
 - FastAPI bundled inside the SDK to serve the dashboard API.
 - Vite, React, TypeScript, and Tailwind for the frontend.
@@ -77,13 +77,14 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ with `npx` on PATH (the triage gate spawns the Phoenix MCP server as a subprocess)
 - A reachable Phoenix instance ([Phoenix Cloud](https://phoenix.arize.com), self-hosted, or `phoenix serve`)
-- A Google AI Studio API key for Gemini
+- A Gemini API key with billed quota, or Vertex AI access. A full cycle makes 40 to 60 Gemini calls, so a free-tier key's daily limit will not finish one.
 
 ### 1. Install
 
 ```bash
-pip install nengok
+pip install "nengok[gemini,phoenix,adk]"
 ```
 
 Nengok writes cluster state to `~/.nengok/state.db` (SQLite) on first run, so the default install has no database setup step. Point `DATABASE_URL` at Postgres or MySQL when you want shared state across pods; the optional `deploy/local/docker-compose.postgres.yml` and `deploy/local/docker-compose.mysql.yml` files bring a local instance up for backend testing. For local development against this repo, see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
@@ -104,7 +105,7 @@ export GOOGLE_API_KEY=...
 nengok run
 ```
 
-This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass. With the `adk` extra installed, the cycle opens with the triage agent described in [docs/agent-builder.md](docs/agent-builder.md); pass `--no-triage` to skip it.
+This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass. The install line above includes the `adk` extra, so the cycle opens with the triage agent described in [docs/agent-builder.md](docs/agent-builder.md); pass `--no-triage` to skip it.
 
 ### 4. Watch continuously (optional)
 
