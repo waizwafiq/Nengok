@@ -50,7 +50,7 @@ class ClusterDetailScreen(Screen):
                 with TabPane("Hypothesis", id="tab-hypothesis"):
                     yield Static("(loading)", id="hypothesis-body")
                 with TabPane("Experiment", id="tab-experiment"):
-                    table = DataTable(zebra_stripes=True, id="experiment-table")
+                    table: DataTable[str] = DataTable(zebra_stripes=True, id="experiment-table")
                     table.add_columns("Case", "Baseline", "Fix")
                     yield table
                 with TabPane("Prompt", id="tab-prompt"):
@@ -58,7 +58,7 @@ class ClusterDetailScreen(Screen):
                 with TabPane("RCA", id="tab-rca"):
                     yield Static("(loading)", id="rca-body")
                 with TabPane("Links", id="tab-links"):
-                    links_table = DataTable(zebra_stripes=True, id="links-table")
+                    links_table: DataTable[str] = DataTable(zebra_stripes=True, id="links-table")
                     links_table.add_columns("Project", "Cluster", "Status", "Confidence", "Rationale")
                     yield links_table
         yield Footer()

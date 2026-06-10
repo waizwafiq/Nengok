@@ -24,6 +24,7 @@ from pydantic import BaseModel, ValidationError
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.diagnoser._text import strip_code_fence
+from nengok.core.evaluators.clustering_score import ClusteringScore
 from nengok.core.observer.redactor import Redactor
 from nengok.state.store import StateStore
 from nengok.utils.gemini import RetryPolicy, call_gemini
@@ -177,7 +178,7 @@ def score_amendment_against_golden(
     *,
     gemini_call: GeminiTextCall | None = None,
     cost_tracker: CostTracker | None = None,
-):
+) -> ClusteringScore:
     """Run the clusterer over the labeled golden set with `amendment` applied."""
     from nengok.core.diagnoser.clusterer import Clusterer
     from nengok.core.evaluators.clustering_score import load_clustering_golden, score_clusters
@@ -196,8 +197,8 @@ def apply_golden_scores(
     *,
     store: StateStore,
     result: RetroResult,
-    current: Any,
-    proposed: Any,
+    current: ClusteringScore,
+    proposed: ClusteringScore,
 ) -> bool:
     """
     Record golden-set scores against the advice row and the retro report.
