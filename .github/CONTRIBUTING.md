@@ -81,6 +81,8 @@ pip install -e ".[dev,phoenix,gemini]"
 
 You end up with Nengok in editable mode plus the dev extras (`ruff`, `pytest`, `mypy`), the Phoenix client, the Gemini SDK, and the OpenInference instrumentor that wraps it. Skip the `phoenix` extra only if you are working on internal modules that never touch `nengok.phoenix.client`; `nengok run` will not work without it. Skip the `gemini` extra only if you never run the sample agent; without it `_maybe_register_phoenix_tracing` configures a Phoenix project but the genai call emits no spans, so the `travel-planner-agent` project never gets created and `nengok run` 404s in step 6.
 
+There is one more optional extra: `adk` installs the exact-pinned `google-adk` that powers the triage agent at the head of every cycle (see [docs/agent-builder.md](../docs/agent-builder.md)). Add it to the bracket list (`pip install -e ".[dev,phoenix,gemini,adk]"`) if you want the agent path locally; it also needs Node on PATH because the agent's MCP toolset spawns `npx`. Without the extra, `nengok run` logs one startup warning and runs the deterministic loop unchanged.
+
 The editable install also runs `npm install && vite build` in `frontend/` via a hatchling build hook so the dashboard works out of the box. This needs Node 22+ on your PATH and adds roughly 30 seconds on a cold install. If you don't have Node or only plan to work on Python, set `NENGOK_SKIP_FRONTEND_BUILD=1` before `pip install` and the hook is a no-op. In that case, `nengok dashboard` still serves the API but `/` returns a JSON hint instead of the UI until you build the frontend manually.
 
 ### 3. Create your `.env`
@@ -163,7 +165,7 @@ phoenix serve
 
 Phoenix UI: <http://localhost:6006>.
 
-Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for read-side MCP operations. Pin to `@arizeai/phoenix-mcp@4.0.13`. There is no Python wheel; install with `npm i -g @arizeai/phoenix-mcp@4.0.13` if you plan to exercise the MCP read path. Bumping the pin is a deliberate change that should land in its own PR.
+Nengok also talks to the `@arizeai/phoenix-mcp` npm package as a subprocess for read-side MCP operations. Pin to `@arizeai/phoenix-mcp@4.0.13`. There is no Python wheel; install with `npm i -g @arizeai/phoenix-mcp@4.0.13` if you plan to exercise the MCP read path. Bumping the pin is a deliberate change that should land in its own PR. The ADK triage agent spawns the same pinned package through its `McpToolset` (the pin comes from `mcp_package` in config), so the preflight check and the triage agent always speak the same Phoenix MCP version. `npx -y` fetches the package on demand, so the global npm install is optional for the triage path too.
 
 ### 5. Generate traces with the sample agent
 
@@ -209,6 +211,8 @@ Every prompt has a flag equivalent for non-interactive use: `--phoenix-url`, `--
 If you would rather start from a documented template and edit by hand instead of running the wizard, use `nengok config init --template <name>`. The three shipped templates are `local` (local `phoenix serve` plus the bundled sample agent), `cloud` (Phoenix Cloud plus the bundled sample agent), and `qa-agent` (local Phoenix plus the retrieval-augmented Q&A sample agent). The same files live at [examples/config-local.toml](../examples/config-local.toml), [examples/config-cloud.toml](../examples/config-cloud.toml), and [examples/config-qa-agent.toml](../examples/config-qa-agent.toml) for browsing on GitHub, and the wizard seeds from the same files so the output of either path stays consistent.
 
 Before the Observer fires, `nengok run` performs an MCP preflight against the configured Phoenix project. If `npx` is on PATH, the check spawns `@arizeai/phoenix-mcp@4.0.13`, calls `list_projects`, and prints a `Heads up: Phoenix project '...' was not found via MCP` line on stderr when the project is missing. The cycle still runs (the warning is best-effort), but the message tells you up front why the Observer is about to return zero spans. Pass `--skip-preflight` to suppress the check; set `NENGOK_MCP_ENABLED=0` to disable it for every run. If `npx` is missing, the preflight downgrades to a debug log and is a no-op.
+
+With the `adk` extra installed, each cycle then opens with the triage agent: an ADK `LlmAgent` that inspects recent traffic through the same Phoenix MCP server and decides whether the full pipeline should wake. A skipped cycle records `skipped_by_triage` in the cycle history; a failed triage call falls back to the deterministic anomaly filter and logs `triage_path=fallback`. Pass `--no-triage` to `nengok run` or `nengok watch` to skip the gate for one invocation, and run `nengok doctor` to see why triage is inactive when it is. The full contract (config keys, verdict schema, metrics) lives in [docs/agent-builder.md](../docs/agent-builder.md).
 
 For projects other than the bundled `travel-planner-agent`, the canonical path is to define a class that satisfies the `AgentRunner` Protocol from `nengok.runners.protocol` and point the config at it:
 
@@ -363,7 +367,7 @@ When you add a new stage that ships span text outward, accept an optional `redac
 
 ### Tests that need an optional extra
 
-SDK CI runs four pytest jobs. `test` installs `[dev]` only and runs the suite on Python 3.11 and 3.12 across `ubuntu-latest` and `windows-latest` (four shards) against the default SQLite backend, so we catch the case where core SDK code accidentally requires an optional dependency or breaks on a different filesystem. `test-postgres` and `test-mysql` each pin Python 3.12 on Ubuntu and stand up a `postgres:16-alpine` or `mysql:8.0` service container, export the corresponding `DATABASE_URL`, run `nengok db migrate` to apply every Alembic revision, then run the same suite so the cross-backend tests in `tests/test_migrations.py` exercise the real dialect. The MySQL leg sets `NENGOK_DATABASE_ALLOW_PLAINTEXT=1` because the service-container loopback has no certificate. `test-full-extras` installs `[dev,gemini,phoenix]` on Python 3.12 and runs the SQLite suite with the upstream types loaded.
+SDK CI runs four pytest jobs. `test` installs `[dev]` only and runs the suite on Python 3.11 and 3.12 across `ubuntu-latest` and `windows-latest` (four shards) against the default SQLite backend, so we catch the case where core SDK code accidentally requires an optional dependency or breaks on a different filesystem. `test-postgres` and `test-mysql` each pin Python 3.12 on Ubuntu and stand up a `postgres:16-alpine` or `mysql:8.0` service container, export the corresponding `DATABASE_URL`, run `nengok db migrate` to apply every Alembic revision, then run the same suite so the cross-backend tests in `tests/test_migrations.py` exercise the real dialect. The MySQL leg sets `NENGOK_DATABASE_ALLOW_PLAINTEXT=1` because the service-container loopback has no certificate. `test-full-extras` installs `[dev,gemini,phoenix,adk]` on Python 3.12 and runs the SQLite suite with the upstream types loaded; before pytest it also constructs the triage agent's ADK runner once, so a `google-adk` pin bump that moves the MCP toolset module fails the job before it can break a live cycle. The triage unit tests themselves drive a fake runner, so they run on the minimal-deps legs too.
 
 Before any pytest leg runs, a fast `migration-namespace-lint` job executes the namespace linters at `tests/test_migration_namespace.py` and `tests/test_alembic_version_namespace.py` so a guest-database rule violation fails CI in under a minute instead of waiting on the service-container legs. The Phoenix harness in `.github/workflows/phoenix-harness.yml` stays on the SQLite default because it never imports from `nengok.state`; any future harness test that touches the state layer should either move to `tests/` (where the matrix runs) or grow its own service container.
 
@@ -382,7 +386,7 @@ from nengok.utils.gemini import call_gemini
 
 The `tests/**` per-file ignore in `pyproject.toml` allows imports below an `importorskip` call (otherwise ruff E402 would fire). Outside `tests/`, imports stay at the top. The relaxation is test-only and is the project's one structural exception to the no-suppressions rule above.
 
-The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments"` before pytest, so if either extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
+The full-extras job also runs `python -c "import google.genai.errors; import phoenix.client.resources.experiments; import google.adk"` before pytest, so if any extra ever silently goes empty (someone deletes a package from the extra in `pyproject.toml`), the job fails loudly instead of letting the wrapper tests skip themselves out of existence.
 
 ### Security and packaging gates
 
