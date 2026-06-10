@@ -40,12 +40,14 @@ DEFAULT_QUESTIONS: tuple[str, ...] = (
     "Which LLM observability platform does Nengok rely on?",
     "What does OpenInference provide for LLM tracing?",
     "How does Nengok decide between a code evaluator and an LLM-as-Judge?",
+    "When does flight MH88 from KUL to NRT depart?",
 )
 
 ROTATING_FAILURES: tuple[FailureMode, ...] = (
     "retriever",
     "hallucination",
     "wrong_attribution",
+    "flights_schema",
 )
 
 
