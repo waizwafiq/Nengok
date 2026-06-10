@@ -104,7 +104,8 @@ class _Sampler:
     def __init__(self, spans: list[TraceSpan]) -> None:
         self._spans = spans
 
-    def sample(self) -> list[TraceSpan]:
+    def sample(self, **kwargs: object) -> list[TraceSpan]:
+        del kwargs
         return self._spans
 
 
@@ -172,7 +173,8 @@ class _TestGenerator:
 
 
 class _PromptProposer:
-    def load_baseline_prompt(self) -> str:
+    def load_baseline_prompt(self, project: str | None = None) -> str:
+        del project
         return "BASE"
 
     def propose(self, cluster: Cluster, *, baseline_prompt: str) -> PromptProposal:

@@ -182,7 +182,7 @@ def test_triage_off_calls_sampler_without_narrowing(tmp_path: Path, monkeypatch:
 
     orch.run_once()
 
-    assert sampler.calls == [{"project_identifier": None, "window_minutes": None}]
+    assert sampler.calls == [{"project_identifier": "default", "window_minutes": None}]
     assert state.records[0].status is CycleStatus.OK
 
 

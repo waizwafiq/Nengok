@@ -55,7 +55,7 @@ class Hypothesizer:
         if not self.phoenix or not cluster.exemplar_span_ids:
             return []
         return self.phoenix.get_spans_by_ids(
-            project_identifier=self.config.project_identifier,
+            project_identifier=cluster.project or self.config.project_identifier,
             span_ids=cluster.exemplar_span_ids,
         )
 

@@ -100,19 +100,22 @@ class Orchestrator:
 
     def _ensure_runner_registered(self) -> None:
         """
-        Load the config-driven runner and bind it to the active project id.
+        Load the config-driven runner for every monitored project.
 
-        When ``config.agent_runner`` is unset, the project relies on the
-        imperative :func:`register_runner` API instead and this is a
-        no-op. Failures here surface as :class:`AgentRunnerLoadError`
-        before any Phoenix calls fire, so a typo in the dotted path is
-        caught before the cycle starts.
+        Each project resolves through ``config.runner_spec_for``, so a
+        mapped entry in ``agent_runners`` wins over the shared
+        ``agent_runner`` fallback. Projects with neither rely on the
+        imperative :func:`register_runner` API instead. Failures here
+        surface as :class:`AgentRunnerLoadError` before any Phoenix
+        calls fire, so a typo in a dotted path is caught at startup
+        rather than mid-experiment.
         """
-        spec = self.config.agent_runner
-        if not spec:
-            return
-        runner = load_runner(spec, self.config.agent_runner_kwargs)
-        register_runner(self.config.project_identifier, runner)
+        for project in self.config.resolved_project_identifiers():
+            spec = self.config.runner_spec_for(project)
+            if not spec:
+                continue
+            runner = load_runner(spec, self.config.agent_runner_kwargs)
+            register_runner(project, runner)
 
     def _resolve_triage_active(self) -> bool:
         """
@@ -187,96 +190,103 @@ class Orchestrator:
                     )
                     return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
 
-                with (
-                    run_context(stage="observer"),
-                    tracer.start_as_current_span("observer") as observer_span,
-                ):
-                    self.current_stage = "observer"
-                    if triage_verdict is None:
-                        spans = self._sampler.sample()
-                    else:
-                        spans = self._sampler.sample(
-                            project_identifier=triage_verdict.project or None,
-                            window_minutes=triage_verdict.window_minutes,
-                        )
-                    anomalies = self._anomaly_filter.filter(spans)
-                    new_anomalies = self._state.deduplicate(anomalies)
-                    set_attributes(
-                        observer_span,
-                        {
-                            "nengok.observer.span_count": len(spans),
-                            "nengok.observer.anomaly_count": len(anomalies),
-                            "nengok.observer.new_anomaly_count": len(new_anomalies),
-                        },
-                    )
-                    logger.info(
-                        "Observer: %d spans -> %d anomalies -> %d new after dedup",
-                        len(spans),
-                        len(anomalies),
-                        len(new_anomalies),
-                    )
-
-                if not new_anomalies:
-                    self._persist_cycle(
-                        cycle_id=run_id,
-                        started_at=started_at,
-                        ended_at=datetime.now(UTC),
-                        status=CycleStatus.OK,
-                        clusters_processed=0,
-                        clusters_discovered=0,
-                        cost_tracker=cost_tracker,
-                    )
-                    return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
-
-                baseline_prompt = self._prompt_proposer.load_baseline_prompt()
+                projects = self._projects_for_cycle(triage_verdict)
+                set_attributes(cycle_span, {"nengok.projects": ", ".join(projects)})
 
                 artifacts: list[FixArtifact] = []
                 escalations = 0
+                clusters: list[Cluster] = []
+                all_new_anomalies: list[AnomalousSpan] = []
+                baselines: dict[str, str] = {}
+                merged_count = 0
 
-                with (
-                    run_context(stage="diagnoser"),
-                    tracer.start_as_current_span("diagnoser") as diagnoser_span,
-                ):
-                    self.current_stage = "diagnoser"
-                    raw_clusters = self._clusterer.cluster(new_anomalies)
-                    known = [cluster_from_row(row) for row in self._state.list_clusters()]
-                    known_by_id = {c.cluster_id: c for c in known}
-
-                    clusters: list[Cluster] = []
-                    merged_count = 0
-                    for raw in raw_clusters:
-                        match_id = self._matcher.match(raw, known)
-                        prior = known_by_id.get(match_id) if match_id is not None else None
-                        merged = raw if prior is None else _merge_into_existing(raw, prior)
-                        if prior is not None:
-                            merged_count += 1
-
-                        decision = self._apply_identity_policy(
-                            merged=merged,
-                            prior=prior,
-                            anomalies=new_anomalies,
-                            baseline_prompt=baseline_prompt,
+                for project in projects:
+                    with (
+                        run_context(stage="observer"),
+                        tracer.start_as_current_span("observer") as observer_span,
+                    ):
+                        self.current_stage = "observer"
+                        set_attributes(observer_span, {"nengok.project": project})
+                        spans = self._sampler.sample(
+                            project_identifier=project,
+                            window_minutes=(
+                                triage_verdict.window_minutes if triage_verdict is not None else None
+                            ),
                         )
-                        if decision is not None:
-                            clusters.append(decision)
-                        elif prior is not None and prior.status is ClusterStatus.APPROVED:
-                            escalations += 1
+                        anomalies = self._anomaly_filter.filter(spans)
+                        new_anomalies = self._state.deduplicate(anomalies)
+                        set_attributes(
+                            observer_span,
+                            {
+                                "nengok.observer.span_count": len(spans),
+                                "nengok.observer.anomaly_count": len(anomalies),
+                                "nengok.observer.new_anomaly_count": len(new_anomalies),
+                            },
+                        )
+                        logger.info(
+                            "Observer[%s]: %d spans -> %d anomalies -> %d new after dedup",
+                            project,
+                            len(spans),
+                            len(anomalies),
+                            len(new_anomalies),
+                        )
 
-                    set_attributes(
-                        diagnoser_span,
-                        {
-                            "nengok.diagnoser.cluster_count": len(clusters),
-                            "nengok.diagnoser.merged_count": merged_count,
-                        },
-                    )
-                    logger.info(
-                        "Diagnoser: %d clusters with hypotheses (%d merged into known clusters)",
-                        len(clusters),
-                        merged_count,
-                    )
+                    if not new_anomalies:
+                        continue
+                    all_new_anomalies.extend(new_anomalies)
+                    baselines[project] = self._prompt_proposer.load_baseline_prompt(project)
 
-                clusters_discovered = len(raw_clusters)
-                signal_counts = _signal_counts_by_cluster(clusters, new_anomalies)
+                    with (
+                        run_context(stage="diagnoser"),
+                        tracer.start_as_current_span("diagnoser") as diagnoser_span,
+                    ):
+                        self.current_stage = "diagnoser"
+                        set_attributes(diagnoser_span, {"nengok.project": project})
+                        raw_clusters = self._clusterer.cluster(new_anomalies)
+                        clusters_discovered += len(raw_clusters)
+                        known = [
+                            c
+                            for c in (cluster_from_row(row) for row in self._state.list_clusters())
+                            if c.project in (None, project)
+                        ]
+                        known_by_id = {c.cluster_id: c for c in known}
+
+                        diagnosed_here = 0
+                        for raw in raw_clusters:
+                            raw = raw.model_copy(update={"project": project})
+                            match_id = self._matcher.match(raw, known)
+                            prior = known_by_id.get(match_id) if match_id is not None else None
+                            merged = raw if prior is None else _merge_into_existing(raw, prior)
+                            if prior is not None:
+                                merged_count += 1
+
+                            decision = self._apply_identity_policy(
+                                merged=merged,
+                                prior=prior,
+                                anomalies=new_anomalies,
+                                baseline_prompt=baselines[project],
+                            )
+                            if decision is not None:
+                                clusters.append(decision)
+                                diagnosed_here += 1
+                            elif prior is not None and prior.status is ClusterStatus.APPROVED:
+                                escalations += 1
+
+                        set_attributes(
+                            diagnoser_span,
+                            {
+                                "nengok.diagnoser.cluster_count": diagnosed_here,
+                                "nengok.diagnoser.merged_count": merged_count,
+                            },
+                        )
+                        logger.info(
+                            "Diagnoser[%s]: %d clusters with hypotheses (%d merged this cycle)",
+                            project,
+                            diagnosed_here,
+                            merged_count,
+                        )
+
+                signal_counts = _signal_counts_by_cluster(clusters, all_new_anomalies)
 
                 for index, cluster in enumerate(clusters):
                     assert cluster.hypothesis is not None
@@ -300,7 +310,12 @@ class Orchestrator:
                             self.current_stage = "fixer"
                             set_attributes(fixer_span, cluster_attrs)
                             cases = self._test_generator.generate(cluster)
-                            proposal = self._prompt_proposer.propose(cluster, baseline_prompt=baseline_prompt)
+                            cluster_baseline = baselines.get(
+                                cluster.project or self.config.project_identifier
+                            )
+                            proposal = self._prompt_proposer.propose(
+                                cluster, baseline_prompt=cluster_baseline
+                            )
                             set_attributes(fixer_span, {"nengok.fixer.case_count": len(cases)})
 
                             if dry_run:
@@ -388,6 +403,8 @@ class Orchestrator:
                     clusters_processed=clusters_processed,
                     clusters_discovered=clusters_discovered,
                     cost_tracker=cost_tracker,
+                    clusters_merged=merged_count,
+                    projects=projects,
                 )
 
                 return CycleResult(
@@ -525,9 +542,11 @@ class Orchestrator:
                     type(exc).__name__,
                     exc_info=exc,
                 )
+                fallback_projects = self.config.resolved_project_identifiers()
                 verdict = TriageVerdict(
                     investigate=True,
-                    project=self.config.project_identifier,
+                    project=fallback_projects[0],
+                    projects=fallback_projects,
                     window_minutes=self.config.triage_lookback_minutes,
                     reason="triage_fallback",
                 )
@@ -582,6 +601,8 @@ class Orchestrator:
         clusters_processed: int,
         clusters_discovered: int,
         cost_tracker: CostTracker,
+        clusters_merged: int = 0,
+        projects: list[str] | None = None,
         error_message: str | None = None,
     ) -> None:
         self._state.record_cycle(
@@ -592,11 +613,29 @@ class Orchestrator:
                 status=status,
                 clusters_processed=clusters_processed,
                 clusters_discovered=clusters_discovered,
+                clusters_merged=clusters_merged,
                 gemini_tokens=cost_tracker.tokens_used,
                 gemini_dollars=cost_tracker.dollars_used,
                 error_message=error_message,
+                projects=projects or [],
             )
         )
+
+    def _projects_for_cycle(self, verdict: TriageVerdict | None) -> list[str]:
+        """
+        Decide which projects this cycle observes.
+
+        Without a verdict every configured project runs. A verdict
+        narrows the cycle to the projects it names (the Phase 16
+        contract lets triage redirect the Observer, so the names are
+        trusted verbatim); an empty verdict list falls back to the full
+        configured set so a confused verdict cannot silence the cycle.
+        """
+        configured = self.config.resolved_project_identifiers()
+        if verdict is None:
+            return configured
+        requested = [p for p in (verdict.projects or [verdict.project]) if p]
+        return requested or configured
 
     def _fresh_cost_tracker(self) -> CostTracker:
         return CostTracker(

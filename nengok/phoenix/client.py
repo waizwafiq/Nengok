@@ -307,6 +307,7 @@ class PhoenixWrapper:
         evaluators: list[CodeEvaluator | JudgeSpec],
         experiment_name: str,
         dry_run: int,
+        project_identifier: str | None = None,
     ) -> _ExperimentRun:
         """
         Execute one Phoenix experiment and return the aggregated pass rate.
@@ -314,16 +315,19 @@ class PhoenixWrapper:
         The task callable runs the monitored agent against each dataset
         row with ``prompt`` injected, so a fix candidate can be A/B'd
         against the baseline without touching the agent's bundled prompt.
+        ``project_identifier`` selects which registered runner drives the
+        rows; multi-project cycles pass the cluster's own project.
         """
-        runner = get_runner(self._config.project_identifier)
+        project = project_identifier or self._config.project_identifier
+        runner = get_runner(project)
         if runner is None:
             raise AgentRunnerLoadError(
                 f"No agent runner registered for Phoenix project "
-                f"'{self._config.project_identifier}'. Call "
+                f"'{project}'. Call "
                 "`nengok.runners.register_runner(<project>, <callable>)` "
                 "from your bootstrap module before invoking `nengok run`, "
                 "or set `--project travel-planner-agent` to use the bundled demo.",
-                project_identifier=self._config.project_identifier,
+                project_identifier=project,
             )
 
         client = self._get_client()
@@ -360,6 +364,7 @@ class PhoenixWrapper:
         baseline_prompt: str,
         proposed_prompt: str,
         evaluators: list[CodeEvaluator | JudgeSpec],
+        project_identifier: str | None = None,
     ) -> tuple[_ExperimentRun, _ExperimentRun]:
         """
         Run both prompt versions against the curated golden dataset.
@@ -379,6 +384,7 @@ class PhoenixWrapper:
             evaluators=evaluators,
             experiment_name=f"golden-baseline-v{version}",
             dry_run=0,
+            project_identifier=project_identifier,
         )
         fix_run = self.run_experiment(
             dataset_ref=dataset_ref,
@@ -386,6 +392,7 @@ class PhoenixWrapper:
             evaluators=evaluators,
             experiment_name=f"golden-fix-v{version}",
             dry_run=0,
+            project_identifier=project_identifier,
         )
         return baseline_run, fix_run
 

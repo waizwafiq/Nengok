@@ -121,7 +121,8 @@ class _Sampler:
     def __init__(self, spans: list[TraceSpan]) -> None:
         self._spans = spans
 
-    def sample(self) -> list[TraceSpan]:
+    def sample(self, **kwargs: object) -> list[TraceSpan]:
+        del kwargs
         return self._spans
 
 
