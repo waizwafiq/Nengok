@@ -248,6 +248,10 @@ class Orchestrator:
                         self._clusterer.feedback = self._state.list_cluster_feedback(
                             project, self.config.clustering_feedback_examples
                         )
+                        active_advice = self._state.get_active_advice(project)
+                        self._clusterer.advice_amendment = (
+                            active_advice["prompt_amendment"] if active_advice else None
+                        )
                         raw_clusters = self._clusterer.cluster(new_anomalies)
                         clusters_discovered += len(raw_clusters)
                         known = [

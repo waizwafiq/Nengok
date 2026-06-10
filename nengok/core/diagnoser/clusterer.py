@@ -75,6 +75,7 @@ class Clusterer:
     cost_tracker: CostTracker | None = None
     redactor: Redactor | None = None
     feedback: list[dict] = field(default_factory=list)
+    advice_amendment: str | None = None
 
     def cluster(self, anomalies: list[AnomalousSpan]) -> list[Cluster]:
         """Return one Cluster per detected failure mode."""
@@ -122,6 +123,7 @@ class Clusterer:
             self.config.cluster_trace_char_budget,
             redactor=redactor,
             feedback=self.feedback,
+            advice_amendment=self.advice_amendment,
         )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
@@ -246,6 +248,7 @@ def _build_clusterer_prompt(
     *,
     redactor: Redactor,
     feedback: list[dict] | None = None,
+    advice_amendment: str | None = None,
 ) -> str:
     rows: list[dict[str, Any]] = [
         {
@@ -272,12 +275,17 @@ def _build_clusterer_prompt(
         indent=2,
     )
 
+    advice_block = ""
+    if advice_amendment:
+        advice_block = f"Operator-approved clustering guidance:\n{advice_amendment}\n\n"
+
     return (
         "You are clustering anomalous LLM agent traces by failure mode for a "
         "monitoring system.\n\n"
         "Group the spans below so each cluster contains traces that share the "
         "same likely root cause. Pick short, descriptive names. Every span "
         "must end up in exactly one cluster.\n\n"
+        f"{advice_block}"
         f"{_feedback_block(feedback or [], redactor)}"
         f"Return ONLY a JSON object that matches this shape:\n{schema_hint}\n\n"
         f"Anomalous spans (JSON list):\n{json.dumps(rows, indent=2, default=str)}\n"

@@ -148,6 +148,10 @@ class _State:
         del project, limit
         return []
 
+    def get_active_advice(self, project: str | None) -> dict | None:
+        del project
+        return None
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 
