@@ -586,6 +586,7 @@ CI workflows trigger based on which directories changed:
 - `frontend/**` → `Frontend CI` runs
 - `sample_agent/**` → `Sample Agent CI` runs (lint + smoke test)
 - `phoenix_harness/**` → `Phoenix Harness` runs (live integration tests, gated by a repo secret)
-- A tagged release (`v*.*.*`) → `Publish` runs and pushes to PyPI
+- A push to `main` → `Publish` dry-runs the build and upload against TestPyPI (`skip-existing`, so re-uploads of an unchanged version are fine), keeping the release path exercised between releases
+- A tagged release (`v*.*.*`) → `Publish` builds the wheel + sdist, pushes to PyPI via trusted publishing, and drafts a GitHub Release that quotes the matching `CHANGELOG.md` section and links the PyPI artifact. The draft stays unpublished until a human reviews it. Cutting a release therefore needs a `## [x.y.z] - YYYY-MM-DD` entry in `CHANGELOG.md` before the tag is pushed; the draft job fails loudly without one
 
 This keeps CI fast on day-to-day work while still giving the harness a place to live.
