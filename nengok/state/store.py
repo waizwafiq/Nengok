@@ -238,6 +238,74 @@ class StateStore:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [dict(row) for row in rows]
 
+    def list_recent_active_clusters(self, *, since: datetime) -> list[dict]:
+        """Return non-closed clusters updated inside the lookback window."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM nengok_clusters
+                WHERE updated_at >= ?
+                  AND status IN ('open', 'diagnosed', 'fix_proposed', 'escalated')
+                ORDER BY updated_at DESC
+                """,
+                (since.isoformat(),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def insert_cluster_link(
+        self,
+        *,
+        cluster_id_a: str,
+        cluster_id_b: str,
+        confidence: float,
+        rationale: str | None,
+    ) -> str | None:
+        """
+        Persist a judge-confirmed cross-agent link, canonically ordered.
+
+        Returns the link id, or None when the pair already exists (the
+        unique key dedups across cycles).
+        """
+        first, second = sorted((cluster_id_a, cluster_id_b))
+        link_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO nengok_cluster_links
+                      (link_id, cluster_id_a, cluster_id_b, confidence, rationale, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (link_id, first, second, confidence, rationale, now),
+                )
+            except sqlite3.IntegrityError:
+                return None
+        return link_id
+
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        """Return every link touching `cluster_id`, with the sibling's summary fields."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT l.link_id, l.cluster_id_a, l.cluster_id_b,
+                       l.confidence, l.rationale, l.created_at,
+                       c.name AS linked_name, c.project AS linked_project,
+                       c.status AS linked_status, c.hypothesis_json AS linked_hypothesis_json,
+                       c.cluster_id AS linked_cluster_id
+                FROM nengok_cluster_links l
+                JOIN nengok_clusters c
+                  ON c.cluster_id = CASE
+                      WHEN l.cluster_id_a = ? THEN l.cluster_id_b
+                      ELSE l.cluster_id_a
+                  END
+                WHERE l.cluster_id_a = ? OR l.cluster_id_b = ?
+                ORDER BY l.created_at DESC
+                """,
+                (cluster_id, cluster_id, cluster_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def record_approval(
         self,
         *,
