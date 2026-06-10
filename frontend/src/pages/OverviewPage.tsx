@@ -199,10 +199,17 @@ function CostCard({
   );
 }
 
-const CYCLE_STATUS_ORDER: CycleStatus[] = ["ok", "over_budget", "circuit_broken", "failed"];
+const CYCLE_STATUS_ORDER: CycleStatus[] = [
+  "ok",
+  "skipped_by_triage",
+  "over_budget",
+  "circuit_broken",
+  "failed",
+];
 
 const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
   ok: "OK",
+  skipped_by_triage: "Skipped by triage",
   over_budget: "Over budget",
   circuit_broken: "Circuit broken",
   failed: "Failed",
@@ -210,6 +217,7 @@ const CYCLE_STATUS_LABEL: Record<CycleStatus, string> = {
 
 const CYCLE_STATUS_BAR: Record<CycleStatus, string> = {
   ok: "bg-status-fix",
+  skipped_by_triage: "bg-status-open",
   over_budget: "bg-status-diagnosed",
   circuit_broken: "bg-status-escalated",
   failed: "bg-destructive",

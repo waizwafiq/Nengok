@@ -228,7 +228,7 @@ jobs:
         run: pytest tests/ -v --tb=short
 
   test-full-extras:
-    name: pytest with [dev,gemini,phoenix]
+    name: pytest with [dev,gemini,phoenix,adk]
     needs: check
     if: needs.check.outputs.should_run == 'true'
     runs-on: ubuntu-latest
@@ -241,14 +241,27 @@ jobs:
           cache: "pip"
           cache-dependency-path: pyproject.toml
 
-      - name: Install package + dev + gemini + phoenix extras
+      - name: Install package + dev + gemini + phoenix + adk extras
         env:
           NENGOK_SKIP_FRONTEND_BUILD: "1"
-        run: pip install -e ".[dev,gemini,phoenix]"
+        run: pip install -e ".[dev,gemini,phoenix,adk]"
 
       - name: Verify optional extras are actually importable
         run: |
-          python -c "import google.genai.errors; import phoenix.client.resources.experiments"
+          python -c "import google.genai.errors; import phoenix.client.resources.experiments; import google.adk"
+
+      # _build_runner resolves the pinned google-adk import paths
+      # (LlmAgent, McpToolset, StdioConnectionParams) lazily, so build a
+      # real runner here to catch a pin bump that moved the toolset
+      # module before it breaks at the head of a live cycle.
+      - name: Verify the triage agent constructs against the pinned ADK
+        run: |
+          python -c "
+          from nengok.agents.triage import _build_runner
+          from nengok.config import NengokConfig
+          cfg = NengokConfig(phoenix_base_url='http://localhost:6006', google_api_key='AIzaCI')
+          _build_runner(cfg)
+          "
 
       - name: Run unit tests (gemini and phoenix tests must run, not skip)
         run: pytest tests/ -v --tb=short
@@ -300,7 +313,10 @@ jobs:
         # whether or not `--strict` is set, so taking nengok out of the
         # picture entirely is the only invocation that stays portable.
         # Real dependency CVEs still exit 1, which is the gate we want.
+        # pip itself is part of the audited environment, so upgrade it
+        # first; the runner image lags pip's own security releases.
         run: |
+          pip install --upgrade pip
           pip install pip-audit
           pip uninstall -y nengok
           pip-audit

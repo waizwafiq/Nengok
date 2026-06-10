@@ -14,11 +14,15 @@ for this self-observability.
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar
 
+from pydantic import ValidationError
+
+from nengok.agents.triage import TriageVerdict, run_triage, triage_disabled_reason
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.diagnoser.clusterer import Clusterer
@@ -42,11 +46,14 @@ from nengok.core.types import (
 )
 from nengok.core.verifier.artifact_writer import ArtifactWriter
 from nengok.core.verifier.gate import VerifierGate
-from nengok.errors import PhoenixTimeoutError
+from nengok.errors import OptionalDependencyError, PhoenixTimeoutError, TriageError
 from nengok.phoenix.client import PhoenixWrapper
+from nengok.phoenix.mcp import MCPError
 from nengok.runners.agent_runner import register_runner
 from nengok.runners.loader import load_runner
+from nengok.server import metrics
 from nengok.state.store import StateStore
+from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import get_logger, run_context
 from nengok.utils.tracing import get_tracer, register_meta_tracer, set_attributes
 
@@ -62,6 +69,7 @@ class Orchestrator:
 
     def __post_init__(self) -> None:
         self._ensure_runner_registered()
+        self._triage_active = self._resolve_triage_active()
         self._phoenix = PhoenixWrapper(self.config)
         self._state = StateStore(self.config.state_db_path, schema=self.config.database_schema)
 
@@ -94,6 +102,26 @@ class Orchestrator:
             return
         runner = load_runner(spec, self.config.agent_runner_kwargs)
         register_runner(self.config.project_identifier, runner)
+
+    def _resolve_triage_active(self) -> bool:
+        """
+        Decide once per process whether the ADK triage gate runs.
+
+        When triage is on in config but cannot run (missing adk extra,
+        no npx on PATH), warn a single time at startup and continue
+        without it instead of warning on every cycle.
+        """
+        if not self.config.triage_enabled:
+            return False
+        reason = triage_disabled_reason(self.config)
+        if reason is None:
+            return True
+        logger.warning(
+            "Triage is enabled in config but cannot run: %s. "
+            "Continuing without triage for the rest of this process.",
+            reason,
+        )
+        return False
 
     def run_once(self, *, dry_run: bool = False) -> CycleResult:
         """One full Observer -> Diagnoser -> Fixer -> Verifier pass."""
@@ -128,12 +156,38 @@ class Orchestrator:
                     },
                 )
 
+                triage_verdict = self._decide_triage()
+                if triage_verdict is not None and not triage_verdict.investigate:
+                    set_attributes(
+                        cycle_span,
+                        {
+                            "nengok.triage.investigate": False,
+                            "nengok.triage.reason": triage_verdict.reason,
+                        },
+                    )
+                    self._persist_cycle(
+                        cycle_id=run_id,
+                        started_at=started_at,
+                        ended_at=datetime.now(UTC),
+                        status=CycleStatus.SKIPPED_BY_TRIAGE,
+                        clusters_processed=0,
+                        clusters_discovered=0,
+                        cost_tracker=cost_tracker,
+                    )
+                    return CycleResult(clusters_detected=0, fixes_proposed=0, escalations=0)
+
                 with (
                     run_context(stage="observer"),
                     tracer.start_as_current_span("observer") as observer_span,
                 ):
                     self.current_stage = "observer"
-                    spans = self._sampler.sample()
+                    if triage_verdict is None:
+                        spans = self._sampler.sample()
+                    else:
+                        spans = self._sampler.sample(
+                            project_identifier=triage_verdict.project or None,
+                            window_minutes=triage_verdict.window_minutes,
+                        )
                     anomalies = self._anomaly_filter.filter(spans)
                     new_anomalies = self._state.deduplicate(anomalies)
                     set_attributes(
@@ -318,6 +372,84 @@ class Orchestrator:
                 error_message=f"{type(exc).__name__}: {exc}",
             )
             raise
+
+    def _decide_triage(self) -> TriageVerdict | None:
+        """
+        Run the ADK triage gate and return its verdict, or None when off.
+
+        Any failure inside the agent (schema violation, timeout, MCP
+        subprocess death, Gemini error, missing extra) falls back to an
+        investigate-everything verdict so the deterministic pipeline the
+        cycle ran before this phase still executes. The `triage_path`
+        field on the log line is the discriminator a reviewer can grep
+        to confirm the ADK path ran versus the fallback.
+        """
+        if not self._triage_active:
+            return None
+        tracer = get_tracer()
+        with (
+            run_context(stage="triage"),
+            tracer.start_as_current_span("triage") as triage_span,
+        ):
+            self.current_stage = "triage"
+            started = time.perf_counter()
+            triage_path = "adk"
+            try:
+                verdict = run_triage(self.config)
+            except (
+                ValidationError,
+                TimeoutError,
+                MCPError,
+                GeminiCallError,
+                OptionalDependencyError,
+                TriageError,
+            ) as exc:
+                triage_path = "fallback"
+                metrics.triage_errors_total.labels(error_class=type(exc).__name__).inc()
+                logger.warning(
+                    "Triage failed (%s); falling back to the deterministic anomaly filter",
+                    type(exc).__name__,
+                    exc_info=exc,
+                )
+                verdict = TriageVerdict(
+                    investigate=True,
+                    project=self.config.project_identifier,
+                    window_minutes=self.config.triage_lookback_minutes,
+                    reason="triage_fallback",
+                )
+            duration_s = time.perf_counter() - started
+            metrics.triage_duration_seconds.observe(duration_s)
+            metrics.triage_total.labels(
+                path=triage_path,
+                outcome="investigate" if verdict.investigate else "skip",
+            ).inc()
+            set_attributes(
+                triage_span,
+                {
+                    "nengok.triage.path": triage_path,
+                    "nengok.triage.investigate": verdict.investigate,
+                    "nengok.triage.project": verdict.project,
+                    "nengok.triage.window_minutes": verdict.window_minutes,
+                    "nengok.triage.duration_s": duration_s,
+                },
+            )
+            logger.info(
+                "Triage decided: triage_path=%s investigate=%s project=%s window_minutes=%d reason=%s",
+                triage_path,
+                verdict.investigate,
+                verdict.project,
+                verdict.window_minutes,
+                verdict.reason,
+                extra={
+                    "event": "triage_decided",
+                    "triage_path": triage_path,
+                    "investigate": verdict.investigate,
+                    "project": verdict.project,
+                    "window_minutes": verdict.window_minutes,
+                    "reason": verdict.reason,
+                },
+            )
+            return verdict
 
     def _ensure_traced(self) -> None:
         """Register the meta-tracer once per process."""

@@ -77,6 +77,14 @@ tui = [
     "textual>=0.85.0,<1.0",
     "rich>=13.7.0",
 ]
+adk = [
+    # Exact pin: the MCP toolset module path has moved between ADK releases,
+    # so every import in nengok/agents/triage.py is verified against this
+    # version. Bumping the pin means re-verifying those imports. The [mcp]
+    # extra matters: google-adk keeps the mcp python SDK optional, and the
+    # toolset import fails without it.
+    "google-adk[mcp]==2.2.0",
+]
 dev = [
     "ruff==0.6.9",
     "mypy>=1.11.0",
@@ -109,6 +117,7 @@ artifacts = ["nengok/server/static/**"]
 [tool.hatch.build.targets.wheel.force-include]
 "nengok/state/alembic.ini" = "nengok/state/alembic.ini"
 "nengok/state/alembic/script.py.mako" = "nengok/state/alembic/script.py.mako"
+"nengok/agents/triage_prompt.md" = "nengok/agents/triage_prompt.md"
 
 [tool.hatch.build.targets.wheel.shared-data]
 "nengok/templates/config-local.toml" = "nengok/templates/config-local.toml"

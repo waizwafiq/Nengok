@@ -125,7 +125,10 @@ def test_overview_sums_regression_cases_from_latest_experiment_per_cluster(tmp_p
 
 def test_overview_aggregates_gemini_spend_and_sparkline(tmp_path: Path) -> None:
     store = StateStore(tmp_path / "state.db")
-    now = datetime.now(UTC)
+    # Anchor at midday so the day-2h offset below cannot cross a UTC date
+    # line; with a bare now() this test fails when run before 02:00 UTC
+    # because c-3 lands on the previous calendar day and splits the bucket.
+    now = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
     store.record_cycle(
         CycleRecord(
             cycle_id="c-1",

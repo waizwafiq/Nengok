@@ -214,6 +214,7 @@ def _build_orchestrator(
         google_api_key="AIzaTEST",
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
+        triage_enabled=False,
     )
     orch = Orchestrator(config=config)
     anomalies = [_make_anomaly(c.cluster_id) for c in clusters]

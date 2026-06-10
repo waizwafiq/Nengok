@@ -271,6 +271,7 @@ def _build_orchestrator(
         google_api_key="AIzaTEST",
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
+        triage_enabled=False,
     )
     orch = Orchestrator(config=config)
     state = _State()

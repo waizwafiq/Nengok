@@ -18,6 +18,7 @@ import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -105,7 +106,12 @@ class PhoenixWrapper:
         return self._client
 
     def get_spans(
-        self, *, project_identifier: str, limit: int, with_annotations: bool = True
+        self,
+        *,
+        project_identifier: str,
+        limit: int,
+        with_annotations: bool = True,
+        start_time: datetime | None = None,
     ) -> list[TraceSpan]:
         """
         Pull spans for a project, optionally enriched with eval annotations.
@@ -114,10 +120,14 @@ class PhoenixWrapper:
         path, which needs the ``LOW_EVAL_SCORE`` signal. Callers that only
         want span bodies (the Diagnoser and Fixer reading exemplars) pass
         ``False`` to skip the extra ``get_span_annotations`` roundtrip.
+        ``start_time`` bounds the read window; the triage gate uses it to
+        narrow a cycle to the verdict's lookback.
         """
         client = self._get_client()
         raw = self._call_with_timeout(
-            lambda: client.spans.get_spans(project_identifier=project_identifier, limit=limit),
+            lambda: client.spans.get_spans(
+                project_identifier=project_identifier, limit=limit, start_time=start_time
+            ),
             method="spans.get_spans",
             timeout_seconds=self._config.phoenix_read_timeout_seconds,
         )
@@ -206,9 +216,7 @@ class PhoenixWrapper:
         if not span_ids:
             return []
         wanted = set(span_ids)
-        batch = self.get_spans(
-            project_identifier=project_identifier, limit=limit, with_annotations=False
-        )
+        batch = self.get_spans(project_identifier=project_identifier, limit=limit, with_annotations=False)
         return [s for s in batch if s.span_id in wanted]
 
     def get_prompt_version(self, *, name: str) -> str | None:

@@ -12,8 +12,13 @@ and the reachability of its dependencies. The shape is fixed:
     "phoenix_reachable": bool,
     "gemini_reachable": bool,
     "db_writable": bool,
+    "triage_adk_ratio": float | null,
 }
 ```
+
+`triage_adk_ratio` is the in-process share of triage decisions that ran
+the ADK path (versus the deterministic fallback). It is null until the
+process has made at least one triage decision.
 
 Phoenix and Gemini reachability cost a real network round-trip and a
 1-token Gemini call respectively, so each is cached for 30 seconds.
@@ -81,6 +86,7 @@ class HealthChecker:
             "phoenix_reachable": self._cached("phoenix", lambda: self._phoenix_check(config)),
             "gemini_reachable": self._cached("gemini", lambda: self._gemini_check(config)),
             "db_writable": bool(self._db_check(config)),
+            "triage_adk_ratio": _triage_adk_ratio(),
         }
 
     def reset(self) -> None:
@@ -97,6 +103,25 @@ class HealthChecker:
         with self._lock:
             self._cache[key] = _CacheEntry(expires_at=now + self._cache_ttl_seconds, value=value)
         return value
+
+
+def _triage_adk_ratio() -> float | None:
+    """
+    Share of this process's triage decisions that took the ADK path.
+
+    None until the first decision. The counters are per-process, so a
+    dashboard-only deployment (which never runs triage) reports None
+    rather than a misleading zero. A live ratio sliding toward 0.0 in a
+    `nengok watch` process means the agent is failing and every cycle
+    is riding the deterministic fallback.
+    """
+    from nengok.server.metrics import triage_path_counts
+
+    counts = triage_path_counts()
+    total = counts["adk"] + counts["fallback"]
+    if total == 0:
+        return None
+    return counts["adk"] / total
 
 
 def check_phoenix_reachable(

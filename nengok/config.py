@@ -78,6 +78,13 @@ DEFAULT_PHOENIX_WRITE_TIMEOUT_SECONDS = 60.0
 DEFAULT_PHOENIX_EXPERIMENT_TIMEOUT_SECONDS = 300.0
 
 DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET = 200_000
+
+# Triage runs Flash rather than Pro: the prompt is small, the verdict
+# schema is fixed, and a Pro call per cycle would inflate the demo cost
+# envelope without measurable accuracy gain.
+DEFAULT_TRIAGE_MODEL = "gemini-3-flash-preview"
+DEFAULT_TRIAGE_TIMEOUT_SECONDS = 30.0
+DEFAULT_TRIAGE_LOOKBACK_MINUTES = 15
 DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION = 6.0
 DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION = 24.0
 
@@ -138,6 +145,11 @@ class NengokConfig:
     gemini_cycle_token_budget: int = DEFAULT_GEMINI_CYCLE_TOKEN_BUDGET
     gemini_input_dollars_per_million: float = DEFAULT_GEMINI_INPUT_DOLLARS_PER_MILLION
     gemini_output_dollars_per_million: float = DEFAULT_GEMINI_OUTPUT_DOLLARS_PER_MILLION
+
+    triage_enabled: bool = True
+    triage_model: str = DEFAULT_TRIAGE_MODEL
+    triage_timeout_seconds: float = DEFAULT_TRIAGE_TIMEOUT_SECONDS
+    triage_lookback_minutes: int = DEFAULT_TRIAGE_LOOKBACK_MINUTES
 
     circuit_breaker_backoff_seconds: int = 900
     circuit_breaker_consecutive_failures: int = 3
@@ -347,6 +359,10 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_MCP_ENABLED": "mcp_enabled",
         "NENGOK_MCP_NPX_COMMAND": "mcp_npx_command",
         "NENGOK_MCP_PACKAGE": "mcp_package",
+        "NENGOK_TRIAGE_ENABLED": "triage_enabled",
+        "NENGOK_TRIAGE_MODEL": "triage_model",
+        "NENGOK_TRIAGE_TIMEOUT_SECONDS": "triage_timeout_seconds",
+        "NENGOK_TRIAGE_LOOKBACK_MINUTES": "triage_lookback_minutes",
         "NENGOK_REDACTION_ENABLED": "redaction_enabled",
         "NENGOK_REDACTOR_CALLABLE": "redactor_callable",
         "NENGOK_METRICS_ENABLED": "metrics_enabled",
@@ -358,14 +374,17 @@ def _read_env() -> dict[str, Any]:
         value = os.environ.get(env_key)
         if value is None:
             continue
-        if config_key == "dashboard_port":
+        if config_key in {"dashboard_port", "triage_lookback_minutes"}:
             out[config_key] = int(value)
+        elif config_key == "triage_timeout_seconds":
+            out[config_key] = float(value)
         elif config_key in {
             "mcp_enabled",
             "redaction_enabled",
             "gemini_use_vertex",
             "metrics_enabled",
             "database_allow_plaintext",
+            "triage_enabled",
         }:
             out[config_key] = _parse_bool(value)
         elif config_key == "dashboard_cors_origins":
@@ -409,4 +428,6 @@ def _range_checks(cfg: NengokConfig) -> list[tuple[str, float, float, float]]:
         ("gemini_output_dollars_per_million", cfg.gemini_output_dollars_per_million, 0.0, 1_000.0),
         ("circuit_breaker_backoff_seconds", cfg.circuit_breaker_backoff_seconds, 1, 86_400),
         ("circuit_breaker_consecutive_failures", cfg.circuit_breaker_consecutive_failures, 1, 100),
+        ("triage_timeout_seconds", cfg.triage_timeout_seconds, 1.0, 600.0),
+        ("triage_lookback_minutes", cfg.triage_lookback_minutes, 1, 1_440),
     ]

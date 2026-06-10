@@ -269,6 +269,7 @@ def _config(tmp_path: Path) -> NengokConfig:
         google_api_key="AIzaTEST",
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
+        triage_enabled=False,
     )
 
 

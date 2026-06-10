@@ -54,6 +54,18 @@ fully replaces the bundled redactor with a dotted-path callable that
 takes a `str` and returns a `str`. Use this when you already have a
 hardened in-house scrubber and want the SDK to defer to it.
 
+## The triage agent's credential surface
+
+The ADK triage agent ([docs/agent-builder.md](agent-builder.md)) inherits
+the existing Phoenix API key surface; it introduces no new credential
+boundary. The `McpToolset` passes the key to the Phoenix MCP subprocess
+through environment variables, the same channel the preflight check
+already uses, so the key stays out of process argument lists. Span text
+the agent reads through MCP does re-enter the model context as tool
+results, so an `after_tool_callback` on the agent runs every string in
+every tool response through the same `Redactor` the pipeline uses
+before Gemini sees it.
+
 ## What you should do before production
 
 Run the redactor against a representative sample of your own traces

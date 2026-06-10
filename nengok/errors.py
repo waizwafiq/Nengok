@@ -83,6 +83,10 @@ class PhoenixTimeoutError(NengokError):
         self.observed_seconds = observed_seconds
 
 
+class TriageError(NengokError):
+    """Raised when the ADK triage agent fails before producing a usable verdict."""
+
+
 class AgentRunnerLoadError(NengokError):
     """Raised when the configured agent runner cannot be imported or fails the protocol check."""
 

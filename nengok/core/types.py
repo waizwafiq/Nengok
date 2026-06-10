@@ -139,6 +139,7 @@ class CycleStatus(str, Enum):
     OVER_BUDGET = "over_budget"
     FAILED = "failed"
     CIRCUIT_BROKEN = "circuit_broken"
+    SKIPPED_BY_TRIAGE = "skipped_by_triage"
 
 
 class CycleRecord(BaseModel):

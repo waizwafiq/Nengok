@@ -214,6 +214,7 @@ def test_cycle_aborts_when_budget_exceeded(tmp_path: Path, patched_tracer: _Null
         google_api_key="AIzaTEST",
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
+        triage_enabled=False,
     )
     config = replace(base_config, gemini_cycle_token_budget=10_000)
     orch = Orchestrator(config=config)

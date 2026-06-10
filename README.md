@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Built on](https://img.shields.io/badge/built%20on-Arize%20Phoenix-orange)](https://github.com/Arize-ai/phoenix)
 
-Nengok (Malay: *"to watch over"*) is a pip-installable SDK that **autonomously detects, diagnoses, and fixes silent failures** in AI agents. It connects to *your* Arize Phoenix instance, samples production traces, clusters failure patterns, generates regression tests from real failures, runs controlled experiments to verify fixes, and presents verified solutions for human approval.
+Nengok (Malay: *"to watch over"*) is a pip-installable SDK that **autonomously detects, diagnoses, and fixes silent failures** in AI agents. It connects to *your* Arize Phoenix instance, samples production traces, clusters failure patterns, generates regression tests from real failures, runs controlled experiments to verify fixes, and presents verified solutions for human approval. Every cycle opens with an ADK `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) that reads recent traffic through the Arize Phoenix MCP server (`McpToolset` running `@arizeai/phoenix-mcp`) and decides whether the full pipeline should wake. Diagnosis runs Gemini 3.1 Pro via `google-genai` on Vertex AI, and the hosted demo lives on Cloud Run.
 
 **Trace data never leaves your infrastructure.** Nengok runs locally next to your Phoenix instance, calls your Gemini key, and writes fix artifacts to your local filesystem.
 
@@ -16,6 +16,7 @@ $ pip install nengok
 $ nengok init --phoenix-url http://localhost:6006
 $ nengok run
 
+Triage:    investigate (adk) -> error burst in 'flights' over the last 15m
 Observer:  200 spans -> 16 anomalies -> 16 new after dedup
 Diagnoser: 3 clusters with hypotheses
 Fixer:     cluster 'flights-schema-drift' -> baseline 25% -> fix 100% (golden: no regression)
@@ -37,12 +38,12 @@ Every AI agent in production loses money through **confident wrong answers**. HT
 Phoenix gives you the observability layer. Nengok adds the **autonomous remediation loop on top**:
 
 ```
-   Observer  ->  Diagnoser  ->  Fixer  ->  Verifier
-       |             |            |           |
-   Pull anomalous  Cluster +    Generate   Pass/fail
-   spans from     hypothesize  tests +    gate +
-   Phoenix        root cause   experiment artifact
-                                          output
+   Triage    ->   Observer  ->  Diagnoser  ->  Fixer  ->  Verifier
+      |               |             |            |           |
+   ADK agent      Pull anomalous  Cluster +    Generate   Pass/fail
+   reads Phoenix  spans from     hypothesize  tests +    gate +
+   via MCP,       Phoenix        root cause   experiment artifact
+   wakes the loop                                        output
 ```
 
 Each cycle takes minutes instead of hours, every fix becomes a permanent regression test, and a human approves every change before anything ships.
@@ -50,6 +51,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 ## Features
 
 - **Plug-and-play with Phoenix.** Works with Phoenix Cloud, self-hosted Phoenix, or `phoenix serve` running on your laptop.
+- **ADK triage gate.** An `LlmAgent` armed with Phoenix MCP tools inspects recent traffic at the head of every cycle and decides whether the full pipeline is worth waking. If the agent errors, the cycle falls back to the rule-based anomaly filter; pass `--no-triage` to skip the gate entirely.
 - **Two-stage failure filtering.** Anomaly query at the SDK layer, then deduplication against previously-seen span IDs. You never re-process healthy traffic.
 - **Two-pass clustering** *(stretch)*. HDBSCAN on trace embeddings, then Gemini sub-clusters by hypothesized root cause so "same symptom, different cause" failures get separated.
 - **Code-first, LLM-second evaluators.** Structural checks are programmatic; only subjective dimensions (coherence, intent match) reach an LLM-as-Judge. Mitigates the well-documented position/verbosity bias of LLM judges.
@@ -61,7 +63,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 
 - Python 3.11+ for the SDK and engine, TypeScript for the dashboard.
 - Gemini 3.1 for reasoning (`gemini-3.1-pro-preview`) and LLM-as-Judge (`gemini-3-flash-preview`).
-- Google ADK as the agent framework.
+- ADK `LlmAgent` ([nengok/agents/triage.py](nengok/agents/triage.py)) gates every cycle through the Arize Phoenix MCP server (`McpToolset` → `@arizeai/phoenix-mcp`); diagnosis runs Gemini 3.1 Pro via `google-genai` on Vertex AI; hosted on Cloud Run.
 - Arize Phoenix for observability (Python SDK + `@arizeai/phoenix-mcp@4.0.13`, CLI).
 - FastAPI bundled inside the SDK to serve the dashboard API.
 - Vite, React, TypeScript, and Tailwind for the frontend.
@@ -100,7 +102,7 @@ export GOOGLE_API_KEY=...
 nengok run
 ```
 
-This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass.
+This executes one full Observer -> Diagnoser -> Fixer -> Verifier pass. With the `adk` extra installed, the cycle opens with the triage agent described in [docs/agent-builder.md](docs/agent-builder.md); pass `--no-triage` to skip it.
 
 ### 4. Watch continuously (optional)
 
@@ -168,12 +170,13 @@ A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retriev
 Run the demo with one copy-paste:
 
 ```bash
+pip install "nengok[gemini,phoenix,adk,tui]"
 python -m sample_agent.seed --count 5
 nengok init --phoenix-url http://localhost:6006 --project travel-planner-agent
 nengok run
 ```
 
-`sample_agent.seed` fires five runs of the Travel Planner with every failure mode injected, then prints the Phoenix project URL. Hand the same project name to `nengok init` and `nengok run` walks the four-stage loop end to end. Run `nengok dashboard` afterwards to approve the verified fix.
+`sample_agent.seed` fires five runs of the Travel Planner with every failure mode injected, then prints the Phoenix project URL. Hand the same project name to `nengok init` and `nengok run` opens with the ADK triage agent, then walks the four-stage loop end to end. Run `nengok dashboard` afterwards to approve the verified fix. That install line is the one the demo recording uses: it skips the optional `clustering` extra on purpose, so every model call in the loop is a Gemini call.
 
 ## Plug in Your Own Agent
 
@@ -210,23 +213,30 @@ Then `nengok doctor` confirms the runner imports and the protocol check passes, 
 ```
 Your Infrastructure
 +---------------------------------------------------------------+
-|                                                                |
-|   $ pip install nengok                                         |
-|                                                                |
-|   +------------------------------------------------------+    |
-|   |                 Nengok SDK                            |    |
-|   |                                                       |    |
-|   |  +--------+  +----------+  +-------+  +----------+   |    |
-|   |  |Observer|->|Diagnoser |->|Fixer  |->|Verifier  |   |    |
-|   |  +---+----+  +-----+----+  +---+---+  +----+-----+   |    |
-|   +------+-------------+-----------+------------+--------+    |
-|          v             v           v            v              |
+|                                                               |
+|   $ pip install nengok                                        |
+|                                                               |
+|   +-------------------------------------------------------+   |
+|   |                      Nengok SDK                       |   |
+|   |                                                       |   |
+|   |  +--------------------------------+                   |   |
+|   |  | Triage: ADK LlmAgent           |                   |   |
+|   |  | McpToolset -> @arizeai/        |                   |   |
+|   |  | phoenix-mcp -> your Phoenix    |                   |   |
+|   |  +---------------+----------------+                   |   |
+|   |                  | investigate? project + window      |   |
+|   |                  v                                    |   |
+|   |  +--------+  +----------+  +-------+  +----------+    |   |
+|   |  |Observer|->|Diagnoser |->|Fixer  |->|Verifier  |    |   |
+|   |  +---+----+  +-----+----+  +---+---+  +----+-----+    |   |
+|   +------+-------------+-----------+------------+---------+   |
+|          v             v           v            v             |
 |     +---------+  +----------+ +-------+ +-----------+         |
 |     | Your    |  | Your     | | Your  | | Local     |         |
 |     | Phoenix |  | Gemini   | |Phoenix| | artifacts |         |
 |     | (read)  |  | key      | |(write)| | + dash    |         |
 |     +---------+  +----------+ +-------+ +-----------+         |
-|                                                                |
+|                                                               |
 +---------------------------------------------------------------+
                     Nothing leaves this box.
 ```
@@ -238,7 +248,7 @@ These are non-negotiable for every contribution. See [`.github/CONTRIBUTING.md`]
 - **Code-first, LLM-second evaluators.** Anything objectively verifiable lives in `nengok/core/evaluators/code_evals.py`. LLM-as-Judge is reserved for subjective criteria.
 - **No data egress.** Nengok must never send trace data to a third-party endpoint. Period.
 - **Human-in-the-loop always.** No code path auto-applies a fix.
-- **Phoenix SDK for writes, MCP for reads.** Centralized in `nengok/phoenix/client.py` and `nengok/phoenix/mcp.py`.
+- **Phoenix SDK for writes, MCP for reads.** Centralized in `nengok/phoenix/client.py` and `nengok/phoenix/mcp.py`; the triage agent in `nengok/agents/triage.py` reads through the same MCP server via its ADK toolset.
 - **Pinned Phoenix versions.** `arize-phoenix-client` is pinned in `pyproject.toml`. Do not chase upstream releases mid-cycle.
 
 ## Roadmap
