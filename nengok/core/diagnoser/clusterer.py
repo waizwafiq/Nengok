@@ -87,6 +87,7 @@ class Clusterer:
         for group in groups:
             members = [a.span.span_id for a in group.members]
             exemplars = _select_exemplars(group.members)
+            signals = sorted({s.value for member in group.members for s in member.signals})
             clusters.append(
                 Cluster(
                     cluster_id=str(uuid.uuid4()),
@@ -98,6 +99,7 @@ class Clusterer:
                     hypothesis=None,
                     created_at=now,
                     updated_at=now,
+                    signals=signals,
                 )
             )
         return clusters

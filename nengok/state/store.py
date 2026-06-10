@@ -27,6 +27,7 @@ from nengok.core.types import (
     ClusterStatus,
     CycleRecord,
     ExperimentResult,
+    RootCauseHypothesis,
 )
 from nengok.state.alembic_runner import upgrade_head
 from nengok.utils.logging import get_logger
@@ -35,6 +36,31 @@ logger = get_logger(__name__)
 
 
 _ALLOWED_RANGE_COLUMNS = frozenset({"created_at", "started_at", "updated_at"})
+
+
+def cluster_from_row(row: dict) -> Cluster:
+    """
+    Rehydrate a `nengok_clusters` row into the shared `Cluster` model.
+
+    The matcher and the cross-agent linker compare live candidates
+    against rows written by earlier cycles, so they need the JSON
+    columns unpacked back into typed fields.
+    """
+    hypothesis_json = row.get("hypothesis_json")
+    signals_json = row.get("signals_json")
+    member_span_ids = json.loads(row["member_spans_json"]) if row.get("member_spans_json") else []
+    return Cluster(
+        cluster_id=row["cluster_id"],
+        name=row["name"],
+        description=row.get("description") or "",
+        status=ClusterStatus(row["status"]),
+        member_span_ids=member_span_ids,
+        exemplar_span_ids=member_span_ids[:5],
+        hypothesis=RootCauseHypothesis.model_validate_json(hypothesis_json) if hypothesis_json else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        signals=json.loads(signals_json) if signals_json else [],
+    )
 
 
 def _range_sql(
@@ -135,8 +161,8 @@ class StateStore:
                 """
                 INSERT INTO nengok_clusters
                   (cluster_id, name, description, status, hypothesis_json, member_spans_json,
-                   created_at, updated_at, first_seen, diagnosed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   created_at, updated_at, first_seen, diagnosed_at, signals_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cluster_id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -145,7 +171,8 @@ class StateStore:
                     member_spans_json = excluded.member_spans_json,
                     updated_at = excluded.updated_at,
                     first_seen = COALESCE(nengok_clusters.first_seen, excluded.first_seen),
-                    diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at)
+                    diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at),
+                    signals_json = excluded.signals_json
                 """,
                 (
                     cluster.cluster_id,
@@ -158,6 +185,7 @@ class StateStore:
                     cluster.updated_at.isoformat(),
                     first_seen_iso,
                     diagnosed_at_iso,
+                    json.dumps(cluster.signals),
                 ),
             )
 
