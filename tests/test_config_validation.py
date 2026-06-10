@@ -198,9 +198,12 @@ def _disable_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("nengok.cli.load_dotenv", _noop)
 
 
-def test_cli_run_exits_two_on_missing_google_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_run_exits_two_on_missing_google_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _isolate_env(monkeypatch)
     _disable_dotenv(monkeypatch)
+    # Without this redirect the CLI falls back to the developer's real
+    # ~/.nengok/config.toml, whose google_api_key makes validation pass.
+    monkeypatch.setattr("nengok.config.DEFAULT_CONFIG_PATH", tmp_path / "missing.toml")
     monkeypatch.setenv("PHOENIX_BASE_URL", "http://localhost:6006")
     runner = CliRunner()
     result = runner.invoke(app, ["run", "--skip-preflight"])
