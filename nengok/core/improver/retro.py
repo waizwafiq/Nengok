@@ -171,6 +171,77 @@ class ClusteringRetro:
         )
 
 
+def score_amendment_against_golden(
+    config: NengokConfig,
+    amendment: str | None,
+    *,
+    gemini_call: GeminiTextCall | None = None,
+    cost_tracker: CostTracker | None = None,
+):
+    """Run the clusterer over the labeled golden set with `amendment` applied."""
+    from nengok.core.diagnoser.clusterer import Clusterer
+    from nengok.core.evaluators.clustering_score import load_clustering_golden, score_clusters
+
+    anomalies, expected = load_clustering_golden()
+    clusterer = Clusterer(
+        config=config,
+        gemini_call=gemini_call,
+        cost_tracker=cost_tracker,
+        advice_amendment=amendment,
+    )
+    return score_clusters(clusterer.cluster(anomalies), expected)
+
+
+def apply_golden_scores(
+    *,
+    store: StateStore,
+    result: RetroResult,
+    current: Any,
+    proposed: Any,
+) -> bool:
+    """
+    Record golden-set scores against the advice row and the retro report.
+
+    Returns whether the proposed amendment is recommended. An amendment
+    that scores worse than the incumbent stays recorded but carries the
+    `not recommended` flag, so a reviewer sees the regression before
+    activating it.
+    """
+    recommended = proposed.f1 >= current.f1
+    payload = {
+        "metrics": result.metrics,
+        "observations": result.observations,
+        "expected_effect": result.expected_effect,
+        "golden": {
+            "current_f1": current.f1,
+            "proposed_f1": proposed.f1,
+            "current_precision": current.precision,
+            "proposed_precision": proposed.precision,
+            "current_recall": current.recall,
+            "proposed_recall": proposed.recall,
+            "recommended": recommended,
+        },
+    }
+    store.update_advice_metrics(advice_id=result.advice_id, metrics_json=json.dumps(payload))
+
+    verdict = "recommended" if recommended else "not recommended"
+    report = Path(result.report_path)
+    lines = [
+        "",
+        "## Golden-set scores",
+        "",
+        f"- current prompt F1: {current.f1:.3f} "
+        f"(precision {current.precision:.3f}, recall {current.recall:.3f})",
+        f"- proposed amendment F1: {proposed.f1:.3f} "
+        f"(precision {proposed.precision:.3f}, recall {proposed.recall:.3f})",
+        f"- verdict: {verdict}",
+        "",
+    ]
+    with report.open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(lines))
+    return recommended
+
+
 def compute_metrics(
     *,
     clusters: list[dict],

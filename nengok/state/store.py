@@ -64,6 +64,22 @@ def cluster_from_row(row: dict) -> Cluster:
     )
 
 
+def _latest_golden_f1(advice_metric_rows: list) -> float | None:
+    """Pull the newest golden-set F1 a retro dry run recorded, if any."""
+    for row in advice_metric_rows:
+        raw = row["metrics_json"]
+        if not raw:
+            continue
+        try:
+            golden = json.loads(raw).get("golden") or {}
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        value = golden.get("current_f1")
+        if value is not None:
+            return float(value)
+    return None
+
+
 def _range_sql(
     base_query: str,
     *,
@@ -504,6 +520,13 @@ class StateStore:
             rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(row) for row in rows]
 
+    def update_advice_metrics(self, *, advice_id: str, metrics_json: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE nengok_clustering_advice SET metrics_json = ? WHERE advice_id = ?",
+                (metrics_json, advice_id),
+            )
+
     def get_active_advice(self, project: str | None) -> dict | None:
         rows = self.list_clustering_advice(project=project, status="active")
         return rows[0] if rows else None
@@ -811,6 +834,27 @@ class StateStore:
                 """
             ).fetchall()
 
+            duplicate_rate_rows = conn.execute(
+                """
+                SELECT
+                    DATE(started_at) AS day,
+                    COALESCE(SUM(clusters_merged), 0) AS merged,
+                    COALESCE(SUM(clusters_discovered), 0) AS discovered
+                FROM nengok_cycles
+                WHERE started_at >= datetime('now', '-30 days')
+                GROUP BY DATE(started_at)
+                ORDER BY day ASC
+                """
+            ).fetchall()
+
+            advice_metric_rows = conn.execute(
+                """
+                SELECT metrics_json FROM nengok_clustering_advice
+                ORDER BY created_at DESC, advice_id DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
         recent_cycles = [
             {
                 "cycle_id": row["cycle_id"],
@@ -857,6 +901,20 @@ class StateStore:
             ],
             "recent_cycles": recent_cycles,
             "recent_cycle_status_counts": recent_status_counts,
+            "clustering_quality": {
+                "duplicate_rate_trend": [
+                    {
+                        "day": row["day"],
+                        "rate": (
+                            round(int(row["merged"] or 0) / int(row["discovered"]), 4)
+                            if int(row["discovered"] or 0)
+                            else 0.0
+                        ),
+                    }
+                    for row in duplicate_rate_rows
+                ],
+                "latest_golden_f1": _latest_golden_f1(advice_metric_rows),
+            },
         }
 
     def insert_notification_pending(

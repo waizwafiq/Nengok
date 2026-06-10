@@ -433,6 +433,13 @@ def improve(
         str | None,
         typer.Option("--project", help="Scope the retro and its advice to one Phoenix project."),
     ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Score the active prompt and the proposed amendment against the golden set.",
+        ),
+    ] = False,
 ) -> None:
     """
     Analyse recent clustering outcomes and propose a prompt amendment.
@@ -441,15 +448,20 @@ def improve(
     report under artifacts/improvement/. Nothing changes until a
     reviewer activates the advice from the dashboard.
     """
-    from nengok.core.improver.retro import ClusteringRetro
+    from nengok.core.improver.retro import (
+        ClusteringRetro,
+        apply_golden_scores,
+        score_amendment_against_golden,
+    )
     from nengok.state.store import StateStore
 
     config = _load_config(project_identifier=project)
     store = StateStore(config.state_db_path, schema=config.database_schema)
     retro = ClusteringRetro(config=config, store=store)
+    resolved_project = project or config.project_identifier
 
     try:
-        result = retro.run(project=project or config.project_identifier)
+        result = retro.run(project=resolved_project)
     except NengokError as exc:
         _report_external_error(exc)
         raise typer.Exit(code=1) from exc
@@ -459,6 +471,20 @@ def improve(
     for observation in result.observations:
         typer.echo(f"  - {observation}")
     typer.echo("Activate it from the dashboard to apply the amendment.")
+
+    if dry_run:
+        active = store.get_active_advice(resolved_project)
+        incumbent = active["prompt_amendment"] if active else None
+        try:
+            current = score_amendment_against_golden(config, incumbent)
+            proposed = score_amendment_against_golden(config, result.prompt_amendment)
+        except NengokError as exc:
+            _report_external_error(exc)
+            raise typer.Exit(code=1) from exc
+        recommended = apply_golden_scores(store=store, result=result, current=current, proposed=proposed)
+        typer.echo(f"Golden F1 (current prompt):   {current.f1:.3f}")
+        typer.echo(f"Golden F1 (proposed change):  {proposed.f1:.3f}")
+        typer.echo(f"Verdict: {'recommended' if recommended else 'not recommended'}")
 
 
 def _interruptible_sleep(total_seconds: float, should_stop: Any) -> None:
