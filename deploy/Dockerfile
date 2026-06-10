@@ -33,8 +33,9 @@ ENV NENGOK_SKIP_FRONTEND_BUILD=1
 # `gemini` pulls google-genai so the dashboard's /health Gemini probe works and
 # the image can route Gemini through Vertex AI (ADC) when deployed. `adk` pulls
 # the pinned google-adk for the triage agent at the head of every cycle.
+# `slack` pulls slack-bolt so /slack/events can mount for approval buttons.
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir ".[phoenix,server,gemini,adk]"
+    && pip install --no-cache-dir ".[phoenix,server,gemini,adk,slack]"
 
 # Pre-warm the npx cache with the pinned Phoenix MCP package (keep the pin in
 # sync with DEFAULT_MCP_PACKAGE in nengok/config.py) so the first triage on a
