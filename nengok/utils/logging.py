@@ -125,11 +125,12 @@ def configure_logging(
     root.handlers = [handler]
     root.setLevel(resolved_level)
 
-    # google.adk and google.genai log verbosely by default and mcp is the
-    # ADK toolset's client library; cap all three so the cycle log stays
-    # readable. Their records still pass through the root handler (and so
-    # the redacting filter) at WARNING and above.
-    for noisy in ("httpx", "httpcore", "urllib3", "openinference", "google.adk", "google_genai", "mcp"):
+    # The ADK logs under the "google_adk" prefix (not "google.adk"),
+    # google-genai under "google_genai", and mcp is the ADK toolset's
+    # client library; cap all three so the cycle log stays readable.
+    # Their records still pass through the root handler (and so the
+    # redacting filter) at WARNING and above.
+    for noisy in ("httpx", "httpcore", "urllib3", "openinference", "google_adk", "google_genai", "mcp"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     global _CONFIGURED
