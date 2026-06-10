@@ -73,32 +73,34 @@ class PromptProposer:
             rationale=draft.rationale,
         )
 
-    def load_baseline_prompt(self) -> str:
+    def load_baseline_prompt(self, project: str | None = None) -> str:
         """
         Resolve the agent's current prompt via the configured loader.
 
         The default loader walks the bundled sample-agent file, then
         Phoenix prompt management, then ``config.baseline_prompt_path``.
         Users override ``config.baseline_prompt_loader`` to plug in
-        their own source.
+        their own source. ``project`` defaults to the configured single
+        project; multi-project cycles pass each project explicitly.
         """
+        resolved_project = project or self.config.project_identifier
         loader = self.baseline_loader or load_baseline_prompt_loader(
             self.config.baseline_prompt_loader,
             config=self.config,
             phoenix=self.phoenix,
         )
-        resolved = loader.load(self.config.project_identifier)
+        resolved = loader.load(resolved_project)
         if resolved:
             return resolved
 
         raise BaselinePromptError(
             f"No baseline prompt resolved for project "
-            f"'{self.config.project_identifier}'. Either register a prompt in "
+            f"'{resolved_project}'. Either register a prompt in "
             "Phoenix Prompt Management under that name, or set "
             '`baseline_prompt_path = "/path/to/prompt.md"` in '
             "`~/.nengok/config.toml`. The sample agent at "
             "`travel-planner-agent` ships with a bundled prompt and needs no setup.",
-            project_identifier=self.config.project_identifier,
+            project_identifier=resolved_project,
         )
 
     def _load_exemplars(self, cluster: Cluster) -> list[TraceSpan]:
@@ -106,7 +108,7 @@ class PromptProposer:
             return []
         wanted = cluster.exemplar_span_ids[:MAX_PROPOSER_EXEMPLARS]
         return self.phoenix.get_spans_by_ids(
-            project_identifier=self.config.project_identifier,
+            project_identifier=cluster.project or self.config.project_identifier,
             span_ids=wanted,
         )
 

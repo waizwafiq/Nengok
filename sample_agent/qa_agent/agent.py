@@ -77,12 +77,13 @@ CORPUS: tuple[tuple[str, str], ...] = (
     ),
 )
 
-FailureMode = Literal["none", "retriever", "hallucination", "wrong_attribution"]
+FailureMode = Literal["none", "retriever", "hallucination", "wrong_attribution", "flights_schema"]
 FAILURE_CHOICES: tuple[FailureMode, ...] = (
     "none",
     "retriever",
     "hallucination",
     "wrong_attribution",
+    "flights_schema",
 )
 
 HALLUCINATION_DIRECTIVE = (
@@ -132,6 +133,33 @@ def _swap_attributions(snippets: list[tuple[str, str]]) -> list[tuple[str, str]]
     return list(zip(rotated_ids, bodies, strict=True))
 
 
+def _flight_status_snippet() -> tuple[str, str]:
+    """
+    Pull a flight row through the shared mock flights API with schema
+    drift enabled.
+
+    Both demo agents fail on the same upstream contract change (the
+    `departure_time` string drifting to a dict), which gives the
+    cross-agent linker a real shared cause to confirm across the
+    `travel-planner-agent` and `qa-agent` projects.
+    """
+    from sample_agent.tools import failure_modes
+    from sample_agent.tools.flights import search_flights
+
+    saved = failure_modes.snapshot()
+    failure_modes.configure("flights")
+    try:
+        row = search_flights(origin="KUL", destination="NRT")[0]
+    finally:
+        failure_modes.restore(saved)
+    return (
+        "flight-status",
+        "Live status from tool.flights.search: flight "
+        f"{row['flight_no']} {row['origin']}->{row['destination']} departs at "
+        f"{row['departure_time']!r} (price ${row['price_usd']}).",
+    )
+
+
 def answer_question(
     question: str,
     *,
@@ -146,6 +174,8 @@ def answer_question(
     snippets = retrieve(question, drop_context=(failure == "retriever"))
     if failure == "wrong_attribution":
         snippets = _swap_attributions(snippets)
+    if failure == "flights_schema":
+        snippets = [*snippets, _flight_status_snippet()]
 
     system_prompt = prompt if prompt is not None else PROMPT_PATH.read_text(encoding="utf-8")
     if failure == "hallucination":

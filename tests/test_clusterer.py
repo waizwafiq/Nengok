@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from nengok.config import NengokConfig
+from nengok.core.diagnoser._text import trim
 from nengok.core.diagnoser.clusterer import (
     MAX_CLUSTER_NAME_LENGTH,
     Clusterer,
     _normalize_name,
-    _trim,
 )
 from nengok.core.types import AnomalousSpan, AnomalySignal, TraceSpan
 
@@ -50,9 +53,9 @@ def test_normalize_name_empty_falls_back() -> None:
 
 
 def test_trim_respects_budget() -> None:
-    assert _trim(None, 100) == ""
-    assert _trim("short", 100) == "short"
-    trimmed = _trim("x" * 50, 10)
+    assert trim(None, 100) == ""
+    assert trim("short", 100) == "short"
+    trimmed = trim("x" * 50, 10)
     assert trimmed.startswith("x" * 10)
     assert trimmed.endswith("<truncated>")
 
@@ -138,6 +141,68 @@ def test_prompt_includes_trimmed_trace_bodies(tmp_config: NengokConfig) -> None:
     assert "A" * budget in captured["prompt"]
     assert "A" * (budget + 1) not in captured["prompt"]
     assert "<truncated>" in captured["prompt"]
+
+
+def test_exemplars_spread_across_signal_sets_and_operations(tmp_config: NengokConfig) -> None:
+    anomalies = [
+        _anomaly("s0"),
+        _anomaly("s1"),
+        _anomaly("s2"),
+        _anomaly("s3"),
+        _anomaly("s4", name="tool.flights.search"),
+        _anomaly("s5", name="tool.weather.lookup"),
+    ]
+    anomalies[3] = AnomalousSpan(span=anomalies[3].span, signals=[AnomalySignal.HIGH_LATENCY])
+
+    fake_groups = [
+        {
+            "name": "mixed-profiles",
+            "description": "One failure mode hitting several operations.",
+            "member_span_ids": [f"s{i}" for i in range(6)],
+        }
+    ]
+
+    def fake_gemini(_prompt: str) -> str:
+        return _fake_response(fake_groups)
+
+    clusters = Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
+
+    exemplars = clusters[0].exemplar_span_ids
+    assert len(exemplars) == 5
+    assert "s3" in exemplars
+    assert "s4" in exemplars
+    assert "s5" in exemplars
+
+
+def test_cluster_retries_once_on_invalid_json(tmp_config: NengokConfig) -> None:
+    anomalies = [_anomaly("s1")]
+    responses = iter(
+        [
+            "not json at all",
+            _fake_response([{"name": "late-fix", "description": "d", "member_span_ids": ["s1"]}]),
+        ]
+    )
+    prompts: list[str] = []
+
+    def fake_gemini(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(responses)
+
+    clusters = Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
+
+    assert [c.name for c in clusters] == ["late-fix"]
+    assert len(prompts) == 2
+    assert "ONLY valid JSON" in prompts[1]
+
+
+def test_cluster_raises_when_retry_also_invalid(tmp_config: NengokConfig) -> None:
+    anomalies = [_anomaly("s1")]
+
+    def fake_gemini(_prompt: str) -> str:
+        return "still not json"
+
+    with pytest.raises(ValidationError):
+        Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
 
 
 def test_cluster_returns_empty_when_no_anomalies(tmp_config: NengokConfig) -> None:

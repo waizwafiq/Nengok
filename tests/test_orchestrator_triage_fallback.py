@@ -69,6 +69,33 @@ class _RecordingState:
     def deduplicate(self, anomalies: list[AnomalousSpan]) -> list[AnomalousSpan]:
         return anomalies
 
+    def list_clusters(self, **kwargs: object) -> list[dict]:
+        del kwargs
+        return []
+
+    def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
+        del span_ids, cluster_id
+
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        del cluster_id
+        return []
+
+    def list_recent_active_clusters(self, *, since: object) -> list[dict]:
+        del since
+        return []
+
+    def insert_cluster_link(self, **kwargs: object) -> str | None:
+        del kwargs
+        return None
+
+    def list_cluster_feedback(self, project: str | None, limit: int = 5) -> list[dict]:
+        del project, limit
+        return []
+
+    def get_active_advice(self, project: str | None) -> dict | None:
+        del project
+        return None
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 
@@ -117,6 +144,7 @@ def _wrapped_exceptions() -> list[BaseException]:
 
 def _config(tmp_path: Path) -> NengokConfig:
     return NengokConfig.load(
+        min_cluster_size=1,
         config_path=tmp_path / "missing.toml",
         phoenix_base_url="http://localhost:6006",
         google_api_key="AIzaTEST",

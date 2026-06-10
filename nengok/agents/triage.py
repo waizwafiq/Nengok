@@ -64,6 +64,7 @@ class TriageVerdict(BaseModel):
     window_minutes: int = Field(ge=1, le=240)
     reason: str = Field(max_length=280)
     signals: list[str] = Field(default_factory=list)
+    projects: list[str] = Field(default_factory=list)
 
 
 def adk_available() -> bool:
@@ -277,10 +278,13 @@ def _build_user_message(config: NengokConfig) -> Any:
     the typed message. The plain-string fallback exists for unit tests
     that drive a fake runner without either package installed.
     """
+    projects = config.resolved_project_identifiers()
+    quoted = ", ".join(f"'{p}'" for p in projects)
     text = (
-        f"Inspect the Phoenix project '{config.project_identifier}' over the "
+        f"Inspect the Phoenix project(s) {quoted} over the "
         f"last {config.triage_lookback_minutes} minutes and return your "
-        "triage verdict as JSON."
+        "triage verdict as JSON. List the projects worth investigating "
+        "this cycle in the `projects` field."
     )
     try:
         from google.genai import types as genai_types

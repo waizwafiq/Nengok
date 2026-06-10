@@ -52,6 +52,13 @@ DEFAULT_VERTEX_LOCATION = "global"
 
 DEFAULT_SPAN_LIMIT = 200
 DEFAULT_MIN_CLUSTER_SIZE = 3
+DEFAULT_CLUSTER_MATCH_THRESHOLD = 0.8
+DEFAULT_CLUSTER_LINK_THRESHOLD = 0.7
+DEFAULT_CLUSTER_LINK_LOOKBACK_DAYS = 7
+DEFAULT_CLUSTER_LINK_MAX_PAIRS = 10
+DEFAULT_CLUSTERING_FEEDBACK_EXAMPLES = 5
+DEFAULT_IMPROVE_EVERY_CYCLES = 0
+DEFAULT_CLUSTERING_QUALITY_FLOOR = 0.8
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
 DEFAULT_GOLDEN_REGRESSION_LIMIT = 0.02
 DEFAULT_DRY_RUN_SAMPLES = 3
@@ -102,14 +109,23 @@ class NengokConfig:
     vertex_location: str = DEFAULT_VERTEX_LOCATION
 
     project_identifier: str = "default"
+    project_identifiers: list[str] = field(default_factory=list)
     agent_runner: str | None = None
     agent_runner_kwargs: dict[str, Any] = field(default_factory=dict)
+    agent_runners: dict[str, str] = field(default_factory=dict)
 
     diagnoser_model: str = DIAGNOSER_MODEL
     judge_model: str = JUDGE_MODEL
 
     span_limit: int = DEFAULT_SPAN_LIMIT
     min_cluster_size: int = DEFAULT_MIN_CLUSTER_SIZE
+    cluster_match_threshold: float = DEFAULT_CLUSTER_MATCH_THRESHOLD
+    cluster_link_threshold: float = DEFAULT_CLUSTER_LINK_THRESHOLD
+    cluster_link_lookback_days: int = DEFAULT_CLUSTER_LINK_LOOKBACK_DAYS
+    cluster_link_max_pairs: int = DEFAULT_CLUSTER_LINK_MAX_PAIRS
+    clustering_feedback_examples: int = DEFAULT_CLUSTERING_FEEDBACK_EXAMPLES
+    improve_every_cycles: int = DEFAULT_IMPROVE_EVERY_CYCLES
+    clustering_quality_floor: float = DEFAULT_CLUSTERING_QUALITY_FLOOR
     regression_pass_threshold: float = DEFAULT_REGRESSION_PASS_THRESHOLD
     golden_regression_limit: float = DEFAULT_GOLDEN_REGRESSION_LIMIT
     dry_run_samples: int = DEFAULT_DRY_RUN_SAMPLES
@@ -246,6 +262,25 @@ class NengokConfig:
                 "Set it via --project, NENGOK_PROJECT, or the config file."
             )
 
+        if any(not entry or not entry.strip() for entry in self.project_identifiers):
+            raise ConfigError(
+                "project_identifiers contains an empty entry. "
+                "Remove it from NENGOK_PROJECTS or the config file."
+            )
+        if len(set(self.project_identifiers)) != len(self.project_identifiers):
+            duplicates = sorted(
+                {p for p in self.project_identifiers if self.project_identifiers.count(p) > 1}
+            )
+            raise ConfigError(
+                f"project_identifiers contains duplicates: {', '.join(duplicates)}. "
+                "Each monitored project may appear only once."
+            )
+
+        for mapped_project, runner_spec in self.agent_runners.items():
+            if not mapped_project:
+                raise ConfigError("agent_runners contains an empty project key.")
+            _validate_runner_spec(runner_spec, field_name=f"agent_runners['{mapped_project}']")
+
         if self.project_identifier == SAMPLE_AGENT_PROJECT_NAME:
             logger.warning(
                 "project_identifier is set to the bundled sample agent project "
@@ -271,23 +306,38 @@ class NengokConfig:
 
         agent_runner = getattr(self, "agent_runner", None)
         if agent_runner:
-            if ":" not in agent_runner or agent_runner.count(":") != 1:
-                raise ConfigError(
-                    f"agent_runner '{agent_runner}' is malformed. "
-                    "Expected `module.path:ClassName` (e.g. "
-                    "`nengok.runners.sample_agent_runner:SampleAgentRunner`)."
-                )
-            module_part, class_part = agent_runner.split(":", 1)
-            if not module_part or not class_part:
-                raise ConfigError(
-                    f"agent_runner '{agent_runner}' is malformed. " "Expected `module.path:ClassName`."
-                )
+            _validate_runner_spec(agent_runner, field_name="agent_runner")
 
         for name, value, lo, hi in _range_checks(self):
             if not lo <= value <= hi:
                 raise ConfigError(
                     f"{name}={value} is out of range. " f"Expected a value between {lo} and {hi}."
                 )
+
+    def resolved_project_identifiers(self) -> list[str]:
+        """
+        Return every project the orchestrator should cover this cycle.
+
+        An empty `project_identifiers` means single-project mode, so
+        existing installs keep monitoring `project_identifier` unchanged.
+        """
+        return list(self.project_identifiers) or [self.project_identifier]
+
+    def runner_spec_for(self, project: str) -> str | None:
+        """Return the dotted runner spec for `project`, falling back to `agent_runner`."""
+        return self.agent_runners.get(project) or self.agent_runner
+
+
+def _validate_runner_spec(spec: str, *, field_name: str) -> None:
+    if ":" not in spec or spec.count(":") != 1:
+        raise ConfigError(
+            f"{field_name} '{spec}' is malformed. "
+            "Expected `module.path:ClassName` (e.g. "
+            "`nengok.runners.sample_agent_runner:SampleAgentRunner`)."
+        )
+    module_part, class_part = spec.split(":", 1)
+    if not module_part or not class_part:
+        raise ConfigError(f"{field_name} '{spec}' is malformed. Expected `module.path:ClassName`.")
 
 
 def _validate_database_url(url: str) -> None:
@@ -413,6 +463,10 @@ def _read_env() -> dict[str, Any]:
     if nengok_notifiers:
         out["notifiers"] = [n.strip() for n in nengok_notifiers.split(",") if n.strip()]
 
+    nengok_projects = os.environ.get("NENGOK_PROJECTS")
+    if nengok_projects:
+        out["project_identifiers"] = [p.strip() for p in nengok_projects.split(",") if p.strip()]
+
     return out
 
 
@@ -432,6 +486,13 @@ def _range_checks(cfg: NengokConfig) -> list[tuple[str, float, float, float]]:
     return [
         ("span_limit", cfg.span_limit, 1, 10_000),
         ("min_cluster_size", cfg.min_cluster_size, 1, 1_000),
+        ("cluster_match_threshold", cfg.cluster_match_threshold, 0.0, 1.0),
+        ("cluster_link_threshold", cfg.cluster_link_threshold, 0.0, 1.0),
+        ("cluster_link_lookback_days", cfg.cluster_link_lookback_days, 1, 365),
+        ("cluster_link_max_pairs", cfg.cluster_link_max_pairs, 1, 1_000),
+        ("clustering_feedback_examples", cfg.clustering_feedback_examples, 0, 100),
+        ("improve_every_cycles", cfg.improve_every_cycles, 0, 10_000),
+        ("clustering_quality_floor", cfg.clustering_quality_floor, 0.0, 1.0),
         ("regression_pass_threshold", cfg.regression_pass_threshold, 0.0, 1.0),
         ("golden_regression_limit", cfg.golden_regression_limit, 0.0, 1.0),
         ("dry_run_samples", cfg.dry_run_samples, 1, 100),

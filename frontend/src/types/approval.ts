@@ -1,5 +1,7 @@
 export type ApprovalDecision = "approved" | "rejected" | "dismissed" | "escalated";
 
+export type FeedbackTag = "duplicate_cluster" | "mixed_root_causes" | "not_a_failure";
+
 export interface ApprovalResult {
   approval_id: string;
   cluster_id: string;

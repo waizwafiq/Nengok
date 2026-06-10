@@ -47,6 +47,7 @@ class ExperimentRunner:
             evaluators=evaluators,
             experiment_name=f"{cluster.cluster_id}-baseline",
             dry_run=self.config.dry_run_samples,
+            project_identifier=cluster.project,
         )
         fix = self.phoenix.run_experiment(
             dataset_ref=dataset_ref,
@@ -54,11 +55,13 @@ class ExperimentRunner:
             evaluators=evaluators,
             experiment_name=f"{cluster.cluster_id}-fix",
             dry_run=self.config.dry_run_samples,
+            project_identifier=cluster.project,
         )
         golden_baseline, golden_fix = self.phoenix.run_golden_comparison(
             baseline_prompt=proposal.baseline_prompt,
             proposed_prompt=proposal.proposed_prompt,
             evaluators=evaluators,
+            project_identifier=cluster.project,
         )
 
         return ExperimentResult(

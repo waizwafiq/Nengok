@@ -32,5 +32,5 @@ class NengokReviewApp(App[None]):
 
         self.push_screen(ClusterListScreen())
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         self.exit()

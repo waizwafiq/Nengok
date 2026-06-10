@@ -8,7 +8,7 @@ gets papered over by a hallucination.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass
@@ -19,6 +19,17 @@ class FailureToggles:
 
 
 _active = FailureToggles()
+
+
+def snapshot() -> FailureToggles:
+    """Return a copy of the active toggles so a caller can restore them."""
+    return replace(_active)
+
+
+def restore(toggles: FailureToggles) -> None:
+    """Reinstate toggles captured by :func:`snapshot`."""
+    global _active
+    _active = toggles
 
 
 def configure(mode: str) -> None:

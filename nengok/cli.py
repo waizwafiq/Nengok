@@ -375,11 +375,14 @@ def watch(
 
     typer.echo(f"Watching project '{config.project_identifier}' every {interval_seconds}s. Ctrl-C to stop.")
 
+    completed_cycles = 0
     while not stop_requested:
         try:
             orchestrator.run_once()
             stage = orchestrator.current_stage or "cycle"
             breaker.record_success(stage)
+            completed_cycles += 1
+            _maybe_run_retro(config=config, completed_cycles=completed_cycles)
         except NengokError as exc:
             stage = orchestrator.current_stage or "cycle"
             opened = breaker.record_failure(stage, exc)
@@ -398,6 +401,90 @@ def watch(
         _interruptible_sleep(interval_seconds, lambda: stop_requested)
 
     typer.echo("\nStopped.")
+
+
+def _maybe_run_retro(*, config: NengokConfig, completed_cycles: int) -> None:
+    """
+    Run the clustering retro after every N completed cycles.
+
+    A retro failure logs at WARNING and never breaks the watch loop;
+    the retro is advisory, the cycle is the product.
+    """
+    every = config.improve_every_cycles
+    if every <= 0 or completed_cycles % every != 0:
+        return
+    try:
+        from nengok.core.improver.retro import ClusteringRetro
+        from nengok.state.store import StateStore
+
+        store = StateStore(config.state_db_path, schema=config.database_schema)
+        retro = ClusteringRetro(config=config, store=store)
+        result = retro.run(project=config.project_identifier)
+        typer.echo(f"Clustering retro proposed advice {result.advice_id}: {result.report_path}")
+    except Exception as exc:
+        get_logger(__name__).warning(
+            "Clustering retro failed after cycle %d; continuing: %s", completed_cycles, exc
+        )
+
+
+@app.command()
+def improve(
+    project: Annotated[
+        str | None,
+        typer.Option("--project", help="Scope the retro and its advice to one Phoenix project."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Score the active prompt and the proposed amendment against the golden set.",
+        ),
+    ] = False,
+) -> None:
+    """
+    Analyse recent clustering outcomes and propose a prompt amendment.
+
+    The advice lands as `proposed` in the state store and as a retro.md
+    report under artifacts/improvement/. Nothing changes until a
+    reviewer activates the advice from the dashboard.
+    """
+    from nengok.core.improver.retro import (
+        ClusteringRetro,
+        apply_golden_scores,
+        score_amendment_against_golden,
+    )
+    from nengok.state.store import StateStore
+
+    config = _load_config(project_identifier=project)
+    store = StateStore(config.state_db_path, schema=config.database_schema)
+    retro = ClusteringRetro(config=config, store=store)
+    resolved_project = project or config.project_identifier
+
+    try:
+        result = retro.run(project=resolved_project)
+    except NengokError as exc:
+        _report_external_error(exc)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Advice {result.advice_id} proposed (status: proposed).")
+    typer.echo(f"Report: {result.report_path}")
+    for observation in result.observations:
+        typer.echo(f"  - {observation}")
+    typer.echo("Activate it from the dashboard to apply the amendment.")
+
+    if dry_run:
+        active = store.get_active_advice(resolved_project)
+        incumbent = active["prompt_amendment"] if active else None
+        try:
+            current = score_amendment_against_golden(config, incumbent)
+            proposed = score_amendment_against_golden(config, result.prompt_amendment)
+        except NengokError as exc:
+            _report_external_error(exc)
+            raise typer.Exit(code=1) from exc
+        recommended = apply_golden_scores(store=store, result=result, current=current, proposed=proposed)
+        typer.echo(f"Golden F1 (current prompt):   {current.f1:.3f}")
+        typer.echo(f"Golden F1 (proposed change):  {proposed.f1:.3f}")
+        typer.echo(f"Verdict: {'recommended' if recommended else 'not recommended'}")
 
 
 def _interruptible_sleep(total_seconds: float, should_stop: Any) -> None:

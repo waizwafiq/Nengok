@@ -23,11 +23,20 @@ export function ClustersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = searchParams.get("status");
   const activeStatus = isClusterStatus(statusParam) ? statusParam : "all";
+  const activeProject = searchParams.get("project") ?? "all";
 
+  const statusArg = activeStatus === "all" ? undefined : activeStatus;
   const { data: clusters = [], isLoading, isError } = useQuery({
-    queryKey: ["clusters", activeStatus],
-    queryFn: () => fetchClusters(activeStatus === "all" ? undefined : activeStatus),
+    queryKey: ["clusters", activeStatus, activeProject],
+    queryFn: () =>
+      activeProject === "all" ? fetchClusters(statusArg) : fetchClusters(statusArg, activeProject),
   });
+
+  const { data: allClusters = [] } = useQuery({
+    queryKey: ["clusters"],
+    queryFn: () => fetchClusters(),
+  });
+  const projects = distinctProjects(allClusters);
 
   function applyFilter(value: ClusterStatus | "all") {
     const next = new URLSearchParams(searchParams);
@@ -39,12 +48,33 @@ export function ClustersPage() {
     setSearchParams(next, { replace: true });
   }
 
+  function applyProjectFilter(value: string) {
+    const next = new URLSearchParams(searchParams);
+    if (value === "all") {
+      next.delete("project");
+    } else {
+      next.set("project", value);
+    }
+    setSearchParams(next, { replace: true });
+  }
+
   return (
     <div className="p-8 animate-in fade-in duration-300">
       <PageHeader
         title="Clusters"
         description="Each group is a named failure pattern detected by the observer."
-        actions={<StatusFilterBar active={activeStatus} onSelect={applyFilter} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {projects.length > 1 ? (
+              <ProjectFilter
+                projects={projects}
+                active={activeProject}
+                onSelect={applyProjectFilter}
+              />
+            ) : null}
+            <StatusFilterBar active={activeStatus} onSelect={applyFilter} />
+          </div>
+        }
       />
 
       {isLoading ? <ClusterListSkeleton /> : null}
@@ -77,6 +107,47 @@ export function ClustersPage() {
       </ul>
     </div>
   );
+}
+
+/**
+ * Project dropdown for installs that monitor more than one Phoenix
+ * project. Hidden entirely in single-project mode so the existing
+ * layout stays untouched.
+ */
+function ProjectFilter({
+  projects,
+  active,
+  onSelect,
+}: {
+  projects: string[];
+  active: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <select
+      aria-label="Filter by project"
+      value={active}
+      onChange={(event) => onSelect(event.target.value)}
+      className="h-7 rounded-md border border-border bg-background px-2 text-xs font-medium text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+    >
+      <option value="all">All projects</option>
+      {projects.map((project) => (
+        <option key={project} value={project}>
+          {project}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function distinctProjects(clusters: { project?: string | null }[]): string[] {
+  const seen = new Set<string>();
+  for (const cluster of clusters) {
+    if (cluster.project) {
+      seen.add(cluster.project);
+    }
+  }
+  return [...seen].sort();
 }
 
 function StatusFilterBar({

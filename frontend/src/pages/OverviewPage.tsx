@@ -3,12 +3,14 @@ import { Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { fetchDashboardOverview } from "../api/dashboard";
 import { fetchClusters } from "../api/clusters";
+import { AdvicePanel } from "../components/AdvicePanel";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
 import { Sparkline } from "../components/ui/Sparkline";
 import type {
+  ClusteringQuality,
   CycleStatus,
   GeminiSpendPoint,
   RecentCycle,
@@ -137,6 +139,9 @@ export function OverviewPage() {
           tokens={data.gemini_tokens_used_30d ?? 0}
           sparkline={data.gemini_spend_sparkline_30d ?? []}
         />
+        <ClusteringQualityCard
+          quality={data.clustering_quality ?? { duplicate_rate_trend: [], latest_golden_f1: null }}
+        />
       </section>
 
       <section className="mb-3 mt-8 flex items-center justify-between">
@@ -147,6 +152,8 @@ export function OverviewPage() {
         <CycleSpendCard cycles={data.recent_cycles ?? []} />
         <CycleStatusCard counts={data.recent_cycle_status_counts ?? {}} />
       </section>
+
+      <AdvicePanel />
     </div>
   );
 }
@@ -195,6 +202,31 @@ function CostCard({
         <Sparkline values={values} />
       </div>
       <div className="mt-1 text-xs text-muted-foreground">{formatTokenCount(tokens)} tokens</div>
+    </Card>
+  );
+}
+
+/**
+ * Clustering quality: latest golden-set pairwise F1 from `nengok improve
+ * --dry-run`, with the 30-day duplicate-rate trend (identity merges per
+ * discovered cluster) as the sparkline. All math happens server-side.
+ */
+function ClusteringQualityCard({ quality }: { quality: ClusteringQuality }) {
+  const rates = quality.duplicate_rate_trend.map((point) => point.rate);
+  const latestRate = rates.length > 0 ? rates[rates.length - 1] : null;
+  return (
+    <Card>
+      <div className="section-label">Clustering quality</div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="text-2xl font-semibold tabular-nums text-foreground">
+          {quality.latest_golden_f1 !== null ? quality.latest_golden_f1.toFixed(2) : "—"}
+        </div>
+        <Sparkline values={rates} />
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        Golden-set F1
+        {latestRate !== null ? ` · duplicate rate ${(latestRate * 100).toFixed(0)}%` : ""}
+      </div>
     </Card>
   );
 }

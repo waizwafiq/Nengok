@@ -92,7 +92,8 @@ class _Sampler:
     def __init__(self, spans: list[TraceSpan]) -> None:
         self._spans = spans
 
-    def sample(self) -> list[TraceSpan]:
+    def sample(self, **kwargs: object) -> list[TraceSpan]:
+        del kwargs
         return self._spans
 
 
@@ -113,6 +114,33 @@ class _State:
 
     def deduplicate(self, anomalies: list[AnomalousSpan]) -> list[AnomalousSpan]:
         return anomalies
+
+    def list_clusters(self, **kwargs: object) -> list[dict]:
+        del kwargs
+        return []
+
+    def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
+        del span_ids, cluster_id
+
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        del cluster_id
+        return []
+
+    def list_recent_active_clusters(self, *, since: object) -> list[dict]:
+        del since
+        return []
+
+    def insert_cluster_link(self, **kwargs: object) -> str | None:
+        del kwargs
+        return None
+
+    def list_cluster_feedback(self, project: str | None, limit: int = 5) -> list[dict]:
+        del project, limit
+        return []
+
+    def get_active_advice(self, project: str | None) -> dict | None:
+        del project
+        return None
 
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         self.upserts.append((cluster, first_seen))
@@ -140,7 +168,14 @@ class _Hypothesizer:
     def __init__(self) -> None:
         self.calls: list[str | None] = []
 
-    def hypothesize(self, cluster: Cluster, *, current_prompt: str | None = None) -> RootCauseHypothesis:
+    def hypothesize(
+        self,
+        cluster: Cluster,
+        *,
+        current_prompt: str | None = None,
+        linked_summaries: list[str] | None = None,
+    ) -> RootCauseHypothesis:
+        del linked_summaries
         del cluster
         self.calls.append(current_prompt)
         return _HYPOTHESIS
@@ -162,7 +197,8 @@ class _PromptProposer:
         self._baseline = baseline
         self.injected_baselines: list[str | None] = []
 
-    def load_baseline_prompt(self) -> str:
+    def load_baseline_prompt(self, project: str | None = None) -> str:
+        del project
         return self._baseline
 
     def propose(self, cluster: Cluster, *, baseline_prompt: str | None = None) -> PromptProposal:
@@ -266,6 +302,7 @@ def _build_orchestrator(
     golden_fix: float = 1.0,
 ) -> tuple[Orchestrator, _State, _ArtifactWriter]:
     config = NengokConfig.load(
+        min_cluster_size=1,
         config_path=tmp_path / "missing.toml",
         phoenix_base_url="http://localhost:6006",
         google_api_key="AIzaTEST",
@@ -330,6 +367,7 @@ def test_full_pass_emits_each_stage_with_cluster_attributes(
         "nengok.cycle",
         "observer",
         "diagnoser",
+        "linker",
         "fixer",
         "verifier",
     ]

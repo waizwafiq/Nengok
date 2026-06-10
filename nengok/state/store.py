@@ -27,6 +27,7 @@ from nengok.core.types import (
     ClusterStatus,
     CycleRecord,
     ExperimentResult,
+    RootCauseHypothesis,
 )
 from nengok.state.alembic_runner import upgrade_head
 from nengok.utils.logging import get_logger
@@ -35,6 +36,48 @@ logger = get_logger(__name__)
 
 
 _ALLOWED_RANGE_COLUMNS = frozenset({"created_at", "started_at", "updated_at"})
+
+
+def cluster_from_row(row: dict) -> Cluster:
+    """
+    Rehydrate a `nengok_clusters` row into the shared `Cluster` model.
+
+    The matcher and the cross-agent linker compare live candidates
+    against rows written by earlier cycles, so they need the JSON
+    columns unpacked back into typed fields.
+    """
+    hypothesis_json = row.get("hypothesis_json")
+    signals_json = row.get("signals_json")
+    member_span_ids = json.loads(row["member_spans_json"]) if row.get("member_spans_json") else []
+    return Cluster(
+        cluster_id=row["cluster_id"],
+        name=row["name"],
+        description=row.get("description") or "",
+        status=ClusterStatus(row["status"]),
+        member_span_ids=member_span_ids,
+        exemplar_span_ids=member_span_ids[:5],
+        hypothesis=RootCauseHypothesis.model_validate_json(hypothesis_json) if hypothesis_json else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        signals=json.loads(signals_json) if signals_json else [],
+        project=row.get("project"),
+    )
+
+
+def _latest_golden_f1(advice_metric_rows: list) -> float | None:
+    """Pull the newest golden-set F1 a retro dry run recorded, if any."""
+    for row in advice_metric_rows:
+        raw = row["metrics_json"]
+        if not raw:
+            continue
+        try:
+            golden = json.loads(raw).get("golden") or {}
+        except (json.JSONDecodeError, AttributeError):
+            continue
+        value = golden.get("current_f1")
+        if value is not None:
+            return float(value)
+    return None
 
 
 def _range_sql(
@@ -135,8 +178,8 @@ class StateStore:
                 """
                 INSERT INTO nengok_clusters
                   (cluster_id, name, description, status, hypothesis_json, member_spans_json,
-                   created_at, updated_at, first_seen, diagnosed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   created_at, updated_at, first_seen, diagnosed_at, signals_json, project)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cluster_id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -145,7 +188,9 @@ class StateStore:
                     member_spans_json = excluded.member_spans_json,
                     updated_at = excluded.updated_at,
                     first_seen = COALESCE(nengok_clusters.first_seen, excluded.first_seen),
-                    diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at)
+                    diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at),
+                    signals_json = excluded.signals_json,
+                    project = COALESCE(excluded.project, nengok_clusters.project)
                 """,
                 (
                     cluster.cluster_id,
@@ -158,7 +203,19 @@ class StateStore:
                     cluster.updated_at.isoformat(),
                     first_seen_iso,
                     diagnosed_at_iso,
+                    json.dumps(cluster.signals),
+                    cluster.project,
                 ),
+            )
+
+    def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
+        """Point `nengok_seen_spans` rows at the cluster that absorbed them."""
+        if not span_ids:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                "UPDATE nengok_seen_spans SET cluster_id = ? WHERE span_id = ?",
+                [(cluster_id, span_id) for span_id in span_ids],
             )
 
     def mark_status(self, cluster_id: str, status: ClusterStatus) -> None:
@@ -179,16 +236,90 @@ class StateStore:
                     (status.value, now, cluster_id),
                 )
 
-    def list_clusters(self, *, status: ClusterStatus | None = None) -> list[dict]:
+    def list_clusters(self, *, status: ClusterStatus | None = None, project: str | None = None) -> list[dict]:
         query = "SELECT * FROM nengok_clusters"
-        params: tuple = ()
+        clauses: list[str] = []
+        params: list = []
         if status is not None:
-            query += " WHERE status = ?"
-            params = (status.value,)
+            clauses.append("status = ?")
+            params.append(status.value)
+        if project is not None:
+            clauses.append("project = ?")
+            params.append(project)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY updated_at DESC"
 
         with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_recent_active_clusters(self, *, since: datetime) -> list[dict]:
+        """Return non-closed clusters updated inside the lookback window."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM nengok_clusters
+                WHERE updated_at >= ?
+                  AND status IN ('open', 'diagnosed', 'fix_proposed', 'escalated')
+                ORDER BY updated_at DESC
+                """,
+                (since.isoformat(),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def insert_cluster_link(
+        self,
+        *,
+        cluster_id_a: str,
+        cluster_id_b: str,
+        confidence: float,
+        rationale: str | None,
+    ) -> str | None:
+        """
+        Persist a judge-confirmed cross-agent link, canonically ordered.
+
+        Returns the link id, or None when the pair already exists (the
+        unique key dedups across cycles).
+        """
+        first, second = sorted((cluster_id_a, cluster_id_b))
+        link_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO nengok_cluster_links
+                      (link_id, cluster_id_a, cluster_id_b, confidence, rationale, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (link_id, first, second, confidence, rationale, now),
+                )
+            except sqlite3.IntegrityError:
+                return None
+        return link_id
+
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        """Return every link touching `cluster_id`, with the sibling's summary fields."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT l.link_id, l.cluster_id_a, l.cluster_id_b,
+                       l.confidence, l.rationale, l.created_at,
+                       c.name AS linked_name, c.project AS linked_project,
+                       c.status AS linked_status, c.hypothesis_json AS linked_hypothesis_json,
+                       c.cluster_id AS linked_cluster_id
+                FROM nengok_cluster_links l
+                JOIN nengok_clusters c
+                  ON c.cluster_id = CASE
+                      WHEN l.cluster_id_a = ? THEN l.cluster_id_b
+                      ELSE l.cluster_id_a
+                  END
+                WHERE l.cluster_id_a = ? OR l.cluster_id_b = ?
+                ORDER BY l.created_at DESC
+                """,
+                (cluster_id, cluster_id, cluster_id),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def record_approval(
@@ -251,6 +382,212 @@ class StateStore:
                 """,
                 (cluster_id,),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_cluster_feedback(
+        self,
+        *,
+        cluster_id: str,
+        kind: str,
+        detail: str | None,
+        source: str,
+    ) -> str:
+        feedback_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO nengok_cluster_feedback
+                  (feedback_id, cluster_id, kind, detail, source, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (feedback_id, cluster_id, kind, detail, source, now),
+            )
+        return feedback_id
+
+    def list_cluster_feedback(self, project: str | None, limit: int = 5) -> list[dict]:
+        """
+        Return the most recent feedback rows for one project, newest first.
+
+        Joins through `nengok_clusters` so the clusterer's few-shot block
+        can name the cluster each correction applies to. A NULL project
+        matches pre-multi-project rows.
+        """
+        sql = """
+            SELECT f.feedback_id, f.cluster_id, f.kind, f.detail, f.source, f.created_at,
+                   c.name AS cluster_name, c.description AS cluster_description,
+                   c.project AS project
+            FROM nengok_cluster_feedback f
+            JOIN nengok_clusters c ON c.cluster_id = f.cluster_id
+        """
+        params: list = []
+        if project is not None:
+            sql += " WHERE c.project = ? OR c.project IS NULL"
+            params.append(project)
+        sql += " ORDER BY f.created_at DESC, f.feedback_id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_cluster_feedback_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            "SELECT feedback_id, cluster_id, kind, detail, source, created_at "
+            "FROM nengok_cluster_feedback",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, feedback_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def detach_spans_from_cluster(self, *, cluster_id: str, span_ids: list[str]) -> int:
+        """
+        Undo a wrong machine merge: pull `span_ids` out of the cluster's
+        member list and delete their `nengok_seen_spans` rows so the next
+        cycle re-processes them into their own cluster.
+
+        Returns how many member ids were actually detached.
+        """
+        if not span_ids:
+            return 0
+        wanted = set(span_ids)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT member_spans_json FROM nengok_clusters WHERE cluster_id = ?",
+                (cluster_id,),
+            ).fetchone()
+            if row is None:
+                return 0
+            members: list[str] = json.loads(row["member_spans_json"] or "[]")
+            kept = [m for m in members if m not in wanted]
+            detached = len(members) - len(kept)
+            if detached == 0:
+                return 0
+            now = datetime.now(UTC).isoformat()
+            conn.execute(
+                "UPDATE nengok_clusters SET member_spans_json = ?, updated_at = ? WHERE cluster_id = ?",
+                (json.dumps(kept), now, cluster_id),
+            )
+            conn.executemany(
+                "DELETE FROM nengok_seen_spans WHERE span_id = ?",
+                [(span_id,) for span_id in wanted],
+            )
+        return detached
+
+    def record_clustering_advice(
+        self,
+        *,
+        project: str | None,
+        prompt_amendment: str,
+        metrics_json: str | None,
+    ) -> str:
+        advice_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO nengok_clustering_advice
+                  (advice_id, project, status, prompt_amendment, metrics_json, created_at)
+                VALUES (?, ?, 'proposed', ?, ?, ?)
+                """,
+                (advice_id, project, prompt_amendment, metrics_json, now),
+            )
+        return advice_id
+
+    def list_clustering_advice(self, *, project: str | None = None, status: str | None = None) -> list[dict]:
+        sql = """
+            SELECT advice_id, project, status, prompt_amendment, metrics_json,
+                   created_at, decided_by, decided_at
+            FROM nengok_clustering_advice
+        """
+        clauses: list[str] = []
+        params: list = []
+        if project is not None:
+            clauses.append("(project = ? OR project IS NULL)")
+            params.append(project)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC, advice_id DESC"
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_advice_metrics(self, *, advice_id: str, metrics_json: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE nengok_clustering_advice SET metrics_json = ? WHERE advice_id = ?",
+                (metrics_json, advice_id),
+            )
+
+    def get_active_advice(self, project: str | None) -> dict | None:
+        rows = self.list_clustering_advice(project=project, status="active")
+        return rows[0] if rows else None
+
+    def activate_clustering_advice(self, *, advice_id: str, decided_by: str) -> dict | None:
+        """
+        Flip one proposed advice row to active, retiring any prior active
+        row for the same project so at most one amendment applies.
+        """
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT advice_id, project FROM nengok_clustering_advice WHERE advice_id = ?",
+                (advice_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            project = row["project"]
+            if project is None:
+                conn.execute(
+                    "UPDATE nengok_clustering_advice SET status = 'retired', decided_at = ? "
+                    "WHERE status = 'active' AND project IS NULL",
+                    (now,),
+                )
+            else:
+                conn.execute(
+                    "UPDATE nengok_clustering_advice SET status = 'retired', decided_at = ? "
+                    "WHERE status = 'active' AND project = ?",
+                    (now, project),
+                )
+            conn.execute(
+                """
+                UPDATE nengok_clustering_advice
+                SET status = 'active', decided_by = ?, decided_at = ?
+                WHERE advice_id = ?
+                """,
+                (decided_by, now, advice_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT advice_id, project, status, prompt_amendment, metrics_json,
+                       created_at, decided_by, decided_at
+                FROM nengok_clustering_advice WHERE advice_id = ?
+                """,
+                (advice_id,),
+            ).fetchone()
+        return dict(updated) if updated else None
+
+    def list_cluster_links_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            "SELECT link_id, cluster_id_a, cluster_id_b, confidence, rationale, created_at "
+            "FROM nengok_cluster_links",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, link_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
     def list_clusters_between(
@@ -345,17 +682,19 @@ class StateStore:
                 """
                 INSERT INTO nengok_cycles
                   (cycle_id, started_at, ended_at, status,
-                   clusters_processed, clusters_discovered,
-                   gemini_tokens, gemini_dollars, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   clusters_processed, clusters_discovered, clusters_merged,
+                   gemini_tokens, gemini_dollars, error_message, projects_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cycle_id) DO UPDATE SET
                     ended_at = excluded.ended_at,
                     status = excluded.status,
                     clusters_processed = excluded.clusters_processed,
                     clusters_discovered = excluded.clusters_discovered,
+                    clusters_merged = excluded.clusters_merged,
                     gemini_tokens = excluded.gemini_tokens,
                     gemini_dollars = excluded.gemini_dollars,
-                    error_message = excluded.error_message
+                    error_message = excluded.error_message,
+                    projects_json = excluded.projects_json
                 """,
                 (
                     record.cycle_id,
@@ -364,9 +703,11 @@ class StateStore:
                     record.status.value,
                     record.clusters_processed,
                     record.clusters_discovered,
+                    record.clusters_merged,
                     record.gemini_tokens,
                     record.gemini_dollars,
                     record.error_message,
+                    json.dumps(record.projects),
                 ),
             )
 
@@ -396,12 +737,21 @@ class StateStore:
                 ),
             )
 
-    def dashboard_overview(self) -> dict:
-        """Aggregated metrics for the executive dashboard panel."""
+    def dashboard_overview(self, *, project: str | None = None) -> dict:
+        """
+        Aggregated metrics for the executive dashboard panel.
+
+        When `project` is given, the cluster-derived aggregates (status
+        counts, MTTD, MTTR, close rate) narrow to that project; spend
+        and cycle history stay process-wide because cycles cover every
+        configured project at once.
+        """
+        project_clause = " AND project = ?" if project is not None else ""
+        project_params: tuple = (project,) if project is not None else ()
         with self._connect() as conn:
-            status_rows = conn.execute(
-                "SELECT status, COUNT(*) AS n FROM nengok_clusters GROUP BY status"
-            ).fetchall()
+            status_sql = "SELECT status, COUNT(*) AS n FROM nengok_clusters WHERE 1=1"
+            status_sql += project_clause + " GROUP BY status"
+            status_rows = conn.execute(status_sql, project_params).fetchall()
             by_status: dict[str, int] = {row["status"]: row["n"] for row in status_rows}
             approved = by_status.get(ClusterStatus.APPROVED.value, 0)
             open_count = by_status.get(ClusterStatus.OPEN.value, 0)
@@ -410,17 +760,17 @@ class StateStore:
             active = approved + open_count + diagnosed + escalated
             close_rate = approved / active if active else 0.0
 
-            mttd_row = conn.execute(
-                """
+            mttd_sql = """
                 SELECT AVG(
                     (julianday(diagnosed_at) - julianday(first_seen)) * 86400.0
                 ) AS seconds
                 FROM nengok_clusters
                 WHERE first_seen IS NOT NULL AND diagnosed_at IS NOT NULL
                 """
-            ).fetchone()
-            mttr_row = conn.execute(
-                """
+            mttd_sql += project_clause
+            mttd_row = conn.execute(mttd_sql, project_params).fetchone()
+
+            mttr_sql = """
                 SELECT AVG(
                     (julianday(a.created_at) - julianday(c.diagnosed_at)) * 86400.0
                 ) AS seconds
@@ -428,7 +778,9 @@ class StateStore:
                 JOIN nengok_approvals a ON a.cluster_id = c.cluster_id
                 WHERE a.decision = 'approved' AND c.diagnosed_at IS NOT NULL
                 """
-            ).fetchone()
+            if project is not None:
+                mttr_sql += " AND c.project = ?"
+            mttr_row = conn.execute(mttr_sql, project_params).fetchone()
 
             regression_row = conn.execute(
                 """
@@ -482,6 +834,27 @@ class StateStore:
                 """
             ).fetchall()
 
+            duplicate_rate_rows = conn.execute(
+                """
+                SELECT
+                    DATE(started_at) AS day,
+                    COALESCE(SUM(clusters_merged), 0) AS merged,
+                    COALESCE(SUM(clusters_discovered), 0) AS discovered
+                FROM nengok_cycles
+                WHERE started_at >= datetime('now', '-30 days')
+                GROUP BY DATE(started_at)
+                ORDER BY day ASC
+                """
+            ).fetchall()
+
+            advice_metric_rows = conn.execute(
+                """
+                SELECT metrics_json FROM nengok_clustering_advice
+                ORDER BY created_at DESC, advice_id DESC
+                LIMIT 10
+                """
+            ).fetchall()
+
         recent_cycles = [
             {
                 "cycle_id": row["cycle_id"],
@@ -528,6 +901,20 @@ class StateStore:
             ],
             "recent_cycles": recent_cycles,
             "recent_cycle_status_counts": recent_status_counts,
+            "clustering_quality": {
+                "duplicate_rate_trend": [
+                    {
+                        "day": row["day"],
+                        "rate": (
+                            round(int(row["merged"] or 0) / int(row["discovered"]), 4)
+                            if int(row["discovered"] or 0)
+                            else 0.0
+                        ),
+                    }
+                    for row in duplicate_rate_rows
+                ],
+                "latest_golden_f1": _latest_golden_f1(advice_metric_rows),
+            },
         }
 
     def insert_notification_pending(

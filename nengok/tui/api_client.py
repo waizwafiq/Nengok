@@ -90,6 +90,16 @@ class TuiApiClient:
             assert isinstance(payload, dict)
             return payload
 
+    async def list_cluster_links(self, cluster_id: str) -> list[dict[str, Any]]:
+        async with self._client() as client:
+            response = await client.get(f"/api/v1/clusters/{cluster_id}/links")
+            if response.status_code == 404:
+                return []
+            response.raise_for_status()
+            payload = response.json()
+            assert isinstance(payload, list)
+            return payload
+
     async def get_artifacts(self, cluster_id: str) -> dict[str, Any] | None:
         async with self._client() as client:
             response = await client.get(f"/api/v1/artifacts/{cluster_id}")
@@ -108,12 +118,15 @@ class TuiApiClient:
         reviewer: str | None,
         reason: str | None,
         source: str = APPROVAL_SOURCE_TUI,
+        feedback_tag: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"decision": decision, "source": source}
         if reviewer is not None:
             body["reviewer"] = reviewer
         if reason is not None:
             body["reason"] = reason
+        if feedback_tag is not None:
+            body["feedback_tag"] = feedback_tag
         async with self._client() as client:
             response = await client.post(
                 f"/api/v1/clusters/{cluster_id}/approvals",

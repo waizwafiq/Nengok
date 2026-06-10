@@ -80,6 +80,8 @@ class Cluster(BaseModel):
     hypothesis: RootCauseHypothesis | None = None
     created_at: datetime
     updated_at: datetime
+    signals: list[str] = Field(default_factory=list)
+    project: str | None = None
 
 
 class RegressionTestCase(BaseModel):
@@ -157,6 +159,8 @@ class CycleRecord(BaseModel):
     status: CycleStatus
     clusters_processed: int = 0
     clusters_discovered: int = 0
+    clusters_merged: int = 0
     gemini_tokens: int = 0
     gemini_dollars: float = 0.0
     error_message: str | None = None
+    projects: list[str] = Field(default_factory=list)

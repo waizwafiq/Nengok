@@ -41,6 +41,7 @@ function buildArtifacts(overrides: Partial<ArtifactBundle> = {}): ArtifactBundle
 
 function mockExperiments() {
   vi.spyOn(experimentsApi, "fetchLatestExperiment").mockResolvedValue(null);
+  vi.spyOn(clustersApi, "fetchClusterLinks").mockResolvedValue([]);
 }
 
 describe("ClusterDetailPage", () => {
@@ -88,6 +89,7 @@ describe("ClusterDetailPage", () => {
         decision: "approved",
         reviewer: "alice",
         reason: null,
+        feedback_tag: null,
       });
     });
   });
@@ -105,6 +107,33 @@ describe("ClusterDetailPage", () => {
     });
 
     expect(await screen.findByText("No RCA artifact yet.")).toBeInTheDocument();
+  });
+
+  it("shows the Also affects panel when cross-agent links exist", async () => {
+    vi.spyOn(clustersApi, "fetchCluster").mockResolvedValue(buildCluster());
+    vi.spyOn(artifactsApi, "fetchArtifacts").mockResolvedValue(buildArtifacts());
+    vi.spyOn(experimentsApi, "fetchLatestExperiment").mockResolvedValue(null);
+    vi.spyOn(clustersApi, "fetchClusterLinks").mockResolvedValue([
+      {
+        link_id: "l-1",
+        linked_cluster_id: "c-qa",
+        linked_name: "qa-flight-status-garbled",
+        linked_project: "qa-agent",
+        linked_status: "diagnosed",
+        confidence: 0.91,
+        rationale: "both consume tool.flights.search",
+        created_at: "2026-06-10T00:00:00Z",
+      },
+    ]);
+
+    renderWithProviders(<ClusterDetailPage />, {
+      initialPath: "/clusters/c-1",
+      routePath: "/clusters/:clusterId",
+    });
+
+    expect(await screen.findByText("Also affects")).toBeInTheDocument();
+    expect(screen.getByText("qa-flight-status-garbled")).toBeInTheDocument();
+    expect(screen.getByText(/91% confidence/)).toBeInTheDocument();
   });
 
   it("renders an error card when the cluster fetch fails", async () => {

@@ -31,7 +31,7 @@ from nengok.config import NengokConfig
 from nengok.server.auth import require_dashboard_token
 from nengok.server.health import HealthChecker
 from nengok.server.rate_limit import DashboardRateLimitMiddleware, build_limiter
-from nengok.server.routes import approvals, artifacts, clusters, dashboard, experiments
+from nengok.server.routes import advice, approvals, artifacts, clusters, dashboard, experiments
 from nengok.server.routes.slack import create_slack_router
 from nengok.utils.logging import get_logger
 
@@ -104,6 +104,7 @@ def create_app(*, config: NengokConfig) -> FastAPI:
     app.include_router(approvals.router, prefix="/api/v1", dependencies=api_dependencies)
     app.include_router(artifacts.router, prefix="/api/v1", dependencies=api_dependencies)
     app.include_router(dashboard.router, prefix="/api/v1", dependencies=api_dependencies)
+    app.include_router(advice.router, prefix="/api/v1", dependencies=api_dependencies)
 
     @app.get("/api/v1/health", dependencies=api_dependencies)
     def health() -> dict[str, str]:
