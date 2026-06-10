@@ -88,6 +88,10 @@ class _RecordingState:
         del kwargs
         return None
 
+    def list_cluster_feedback(self, project: str | None, limit: int = 5) -> list[dict]:
+        del project, limit
+        return []
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 

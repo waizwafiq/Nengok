@@ -245,6 +245,9 @@ class Orchestrator:
                     ):
                         self.current_stage = "diagnoser"
                         set_attributes(diagnoser_span, {"nengok.project": project})
+                        self._clusterer.feedback = self._state.list_cluster_feedback(
+                            project, self.config.clustering_feedback_examples
+                        )
                         raw_clusters = self._clusterer.cluster(new_anomalies)
                         clusters_discovered += len(raw_clusters)
                         known = [

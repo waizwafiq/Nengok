@@ -56,6 +56,7 @@ DEFAULT_CLUSTER_MATCH_THRESHOLD = 0.8
 DEFAULT_CLUSTER_LINK_THRESHOLD = 0.7
 DEFAULT_CLUSTER_LINK_LOOKBACK_DAYS = 7
 DEFAULT_CLUSTER_LINK_MAX_PAIRS = 10
+DEFAULT_CLUSTERING_FEEDBACK_EXAMPLES = 5
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
 DEFAULT_GOLDEN_REGRESSION_LIMIT = 0.02
 DEFAULT_DRY_RUN_SAMPLES = 3
@@ -120,6 +121,7 @@ class NengokConfig:
     cluster_link_threshold: float = DEFAULT_CLUSTER_LINK_THRESHOLD
     cluster_link_lookback_days: int = DEFAULT_CLUSTER_LINK_LOOKBACK_DAYS
     cluster_link_max_pairs: int = DEFAULT_CLUSTER_LINK_MAX_PAIRS
+    clustering_feedback_examples: int = DEFAULT_CLUSTERING_FEEDBACK_EXAMPLES
     regression_pass_threshold: float = DEFAULT_REGRESSION_PASS_THRESHOLD
     golden_regression_limit: float = DEFAULT_GOLDEN_REGRESSION_LIMIT
     dry_run_samples: int = DEFAULT_DRY_RUN_SAMPLES
@@ -484,6 +486,7 @@ def _range_checks(cfg: NengokConfig) -> list[tuple[str, float, float, float]]:
         ("cluster_link_threshold", cfg.cluster_link_threshold, 0.0, 1.0),
         ("cluster_link_lookback_days", cfg.cluster_link_lookback_days, 1, 365),
         ("cluster_link_max_pairs", cfg.cluster_link_max_pairs, 1, 1_000),
+        ("clustering_feedback_examples", cfg.clustering_feedback_examples, 0, 100),
         ("regression_pass_threshold", cfg.regression_pass_threshold, 0.0, 1.0),
         ("golden_regression_limit", cfg.golden_regression_limit, 0.0, 1.0),
         ("dry_run_samples", cfg.dry_run_samples, 1, 100),

@@ -12,7 +12,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -74,6 +74,7 @@ class Clusterer:
     gemini_call: GeminiTextCall | None = None
     cost_tracker: CostTracker | None = None
     redactor: Redactor | None = None
+    feedback: list[dict] = field(default_factory=list)
 
     def cluster(self, anomalies: list[AnomalousSpan]) -> list[Cluster]:
         """Return one Cluster per detected failure mode."""
@@ -116,7 +117,12 @@ class Clusterer:
         ids the model omits from every group are silently dropped.
         """
         redactor = self.redactor or Redactor.from_config(self.config)
-        prompt = _build_clusterer_prompt(anomalies, self.config.cluster_trace_char_budget, redactor=redactor)
+        prompt = _build_clusterer_prompt(
+            anomalies,
+            self.config.cluster_trace_char_budget,
+            redactor=redactor,
+            feedback=self.feedback,
+        )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
         try:
@@ -189,11 +195,57 @@ def _select_exemplars(members: list[AnomalousSpan], limit: int = MAX_EXEMPLARS) 
     return exemplars
 
 
+_FEEDBACK_INSTRUCTIONS: dict[str, str] = {
+    "mixed_root_causes": (
+        "A reviewer flagged cluster '{name}' as mixing different root causes; "
+        "split groups like it instead of lumping symptoms together."
+    ),
+    "duplicate_cluster": (
+        "A reviewer flagged cluster '{name}' as a duplicate; reuse established "
+        "failure-mode names rather than inventing near-identical ones."
+    ),
+    "not_a_failure": (
+        "A reviewer said spans grouped under '{name}' are not failures; "
+        "leave healthy spans out of every cluster."
+    ),
+    "merge_wrong": (
+        "A machine merge into '{name}' was wrong; only group spans that share " "one root cause."
+    ),
+    "fix_rejected": "A reviewer rejected the proposed fix for cluster '{name}'.",
+    "cluster_dismissed": "A reviewer dismissed cluster '{name}' without a fix.",
+    "fix_approved": "The fix for cluster '{name}' was approved; that grouping was right.",
+}
+
+
+def _feedback_block(feedback: list[dict], redactor: Redactor) -> str:
+    """
+    Render reviewer corrections as short instructions, redacted.
+
+    This is the bridge that closes the loop from `nengok_approvals`
+    into the next cycle's clustering decisions.
+    """
+    lines: list[str] = []
+    for row in feedback:
+        template = _FEEDBACK_INSTRUCTIONS.get(str(row.get("kind")))
+        if template is None:
+            continue
+        name = str(row.get("cluster_name") or row.get("cluster_id") or "unknown")
+        instruction = template.format(name=name)
+        detail = str(row.get("detail") or "").strip()
+        if detail:
+            instruction += f" Reviewer note: {detail}"
+        lines.append("- " + redactor.redact(instruction))
+    if not lines:
+        return ""
+    return "Past corrections from human reviewers:\n" + "\n".join(lines) + "\n\n"
+
+
 def _build_clusterer_prompt(
     anomalies: list[AnomalousSpan],
     char_budget: int,
     *,
     redactor: Redactor,
+    feedback: list[dict] | None = None,
 ) -> str:
     rows: list[dict[str, Any]] = [
         {
@@ -226,6 +278,7 @@ def _build_clusterer_prompt(
         "Group the spans below so each cluster contains traces that share the "
         "same likely root cause. Pick short, descriptive names. Every span "
         "must end up in exactly one cluster.\n\n"
+        f"{_feedback_block(feedback or [], redactor)}"
         f"Return ONLY a JSON object that matches this shape:\n{schema_hint}\n\n"
         f"Anomalous spans (JSON list):\n{json.dumps(rows, indent=2, default=str)}\n"
     )
