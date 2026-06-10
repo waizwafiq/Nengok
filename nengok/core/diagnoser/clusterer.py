@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.diagnoser._text import strip_code_fence, trim
 from nengok.core.observer.redactor import Redactor
 from nengok.core.types import AnomalousSpan, Cluster, ClusterStatus
 from nengok.utils.gemini import RetryPolicy, call_gemini
@@ -30,8 +31,6 @@ logger = get_logger(__name__)
 MAX_CLUSTER_NAME_LENGTH = 40
 _NAME_INVALID_CHARS = re.compile(r"[^a-z0-9-]+")
 _NAME_DASH_RUN = re.compile(r"-+")
-_CODE_FENCE_OPEN = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
-_CODE_FENCE_CLOSE = re.compile(r"\s*```\s*$")
 
 GeminiTextCall = Callable[[str], str]
 
@@ -117,7 +116,7 @@ class Clusterer:
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
         try:
-            response = _GeminiClustererResponse.model_validate_json(_strip_code_fence(raw))
+            response = _GeminiClustererResponse.model_validate_json(strip_code_fence(raw))
         except ValidationError:
             logger.exception("Gemini clusterer response failed Pydantic validation")
             raise
@@ -147,22 +146,6 @@ class Clusterer:
         )
 
 
-def _strip_code_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    without_open = _CODE_FENCE_OPEN.sub("", stripped, count=1)
-    return _CODE_FENCE_CLOSE.sub("", without_open).strip()
-
-
-def _trim(value: str | None, budget: int) -> str:
-    if not value:
-        return ""
-    if len(value) <= budget:
-        return value
-    return value[:budget] + "...<truncated>"
-
-
 def _build_clusterer_prompt(
     anomalies: list[AnomalousSpan],
     char_budget: int,
@@ -173,8 +156,8 @@ def _build_clusterer_prompt(
         {
             "span_id": a.span.span_id,
             "operation": a.span.name,
-            "input": redactor.redact(_trim(a.span.input_value, char_budget)),
-            "output": redactor.redact(_trim(a.span.output_value, char_budget)),
+            "input": redactor.redact(trim(a.span.input_value, char_budget)),
+            "output": redactor.redact(trim(a.span.output_value, char_budget)),
             "attributes": a.span.attributes,
             "signals": [s.value for s in a.signals],
         }

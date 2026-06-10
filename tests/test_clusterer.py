@@ -6,11 +6,11 @@ import json
 from typing import Any
 
 from nengok.config import NengokConfig
+from nengok.core.diagnoser._text import trim
 from nengok.core.diagnoser.clusterer import (
     MAX_CLUSTER_NAME_LENGTH,
     Clusterer,
     _normalize_name,
-    _trim,
 )
 from nengok.core.types import AnomalousSpan, AnomalySignal, TraceSpan
 
@@ -50,9 +50,9 @@ def test_normalize_name_empty_falls_back() -> None:
 
 
 def test_trim_respects_budget() -> None:
-    assert _trim(None, 100) == ""
-    assert _trim("short", 100) == "short"
-    trimmed = _trim("x" * 50, 10)
+    assert trim(None, 100) == ""
+    assert trim("short", 100) == "short"
+    trimmed = trim("x" * 50, 10)
     assert trimmed.startswith("x" * 10)
     assert trimmed.endswith("<truncated>")
 

@@ -9,7 +9,6 @@ is to read 3-5 exemplar traces and propose what went wrong upstream.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -18,6 +17,7 @@ from pydantic import ValidationError
 
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
+from nengok.core.diagnoser._text import strip_code_fence, trim
 from nengok.core.observer.redactor import Redactor
 from nengok.core.types import Cluster, RootCauseHypothesis, TraceSpan
 from nengok.phoenix.client import PhoenixWrapper
@@ -27,9 +27,6 @@ from nengok.utils.logging import get_logger
 logger = get_logger(__name__)
 
 GeminiTextCall = Callable[[str], str]
-
-_CODE_FENCE_OPEN = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
-_CODE_FENCE_CLOSE = re.compile(r"\s*```\s*$")
 
 
 @dataclass
@@ -88,7 +85,7 @@ class Hypothesizer:
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
         try:
-            return RootCauseHypothesis.model_validate_json(_strip_code_fence(raw))
+            return RootCauseHypothesis.model_validate_json(strip_code_fence(raw))
         except ValidationError:
             logger.warning(
                 "Hypothesizer response failed validation for cluster=%s; retrying once",
@@ -99,7 +96,7 @@ class Hypothesizer:
                 "No prose, no markdown, no code fence."
             )
             retry = gemini(retry_prompt)
-            return RootCauseHypothesis.model_validate_json(_strip_code_fence(retry))
+            return RootCauseHypothesis.model_validate_json(strip_code_fence(retry))
 
     def _default_gemini_call(self, prompt: str) -> str:
         from nengok.utils.genai_client import build_genai_client
@@ -122,22 +119,6 @@ class Hypothesizer:
         )
 
 
-def _strip_code_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-    without_open = _CODE_FENCE_OPEN.sub("", stripped, count=1)
-    return _CODE_FENCE_CLOSE.sub("", without_open).strip()
-
-
-def _trim(value: str | None, budget: int) -> str:
-    if not value:
-        return ""
-    if len(value) <= budget:
-        return value
-    return value[:budget] + "...<truncated>"
-
-
 def _exemplar_rows(
     cluster: Cluster,
     exemplars: list[TraceSpan],
@@ -158,8 +139,8 @@ def _exemplar_rows(
                 "operation": span.name,
                 "status_code": span.status_code,
                 "latency_ms": span.latency_ms,
-                "input": redactor.redact(_trim(span.input_value, char_budget)),
-                "output": redactor.redact(_trim(span.output_value, char_budget)),
+                "input": redactor.redact(trim(span.input_value, char_budget)),
+                "output": redactor.redact(trim(span.output_value, char_budget)),
                 "attributes": span.attributes,
             }
         )
