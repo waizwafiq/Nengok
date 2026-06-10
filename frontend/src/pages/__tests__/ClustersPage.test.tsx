@@ -85,6 +85,40 @@ describe("ClustersPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a project badge and project filter in multi-project mode", async () => {
+    const fetcher = vi.spyOn(clustersApi, "fetchClusters").mockResolvedValue([
+      buildCluster({ cluster_id: "c-1", project: "travel-planner-agent" }),
+      buildCluster({
+        cluster_id: "c-2",
+        name: "qa-citation-drift",
+        project: "qa-agent",
+      }),
+    ]);
+
+    renderWithProviders(<ClustersPage />);
+
+    expect((await screen.findAllByText("travel-planner-agent")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("qa-agent").length).toBeGreaterThan(0);
+
+    const dropdown = await screen.findByLabelText("Filter by project");
+    await userEvent.selectOptions(dropdown, "qa-agent");
+
+    await waitFor(() => {
+      expect(fetcher).toHaveBeenCalledWith(undefined, "qa-agent");
+    });
+  });
+
+  it("hides the project filter in single-project mode", async () => {
+    vi.spyOn(clustersApi, "fetchClusters").mockResolvedValue([
+      buildCluster({ project: "travel-planner-agent" }),
+    ]);
+
+    renderWithProviders(<ClustersPage />);
+
+    expect(await screen.findByText("schema-drift-on-flights")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter by project")).not.toBeInTheDocument();
+  });
+
   it("renders an error card when the cluster list fails to load", async () => {
     vi.spyOn(clustersApi, "fetchClusters").mockRejectedValue(new Error("offline"));
 

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import { StatusBadge } from "../StatusBadge";
+import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
 import type { Cluster } from "../../types/cluster";
 
@@ -22,6 +23,7 @@ export function ClusterCard({ cluster }: Props) {
               {cluster.name}
             </Link>
             <StatusBadge status={cluster.status} />
+            {cluster.project ? <Badge tone="primary">{cluster.project}</Badge> : null}
           </div>
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{cluster.description}</p>
           <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">

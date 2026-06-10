@@ -24,4 +24,5 @@ export interface Cluster {
   member_spans_json: string;
   created_at: string;
   updated_at: string;
+  project?: string | null;
 }
