@@ -14,7 +14,7 @@ export interface GeminiSpendPoint {
   dollars: number;
 }
 
-export type CycleStatus = "ok" | "over_budget" | "failed" | "circuit_broken";
+export type CycleStatus = "ok" | "over_budget" | "failed" | "circuit_broken" | "skipped_by_triage";
 
 export interface RecentCycle {
   cycle_id: string;
