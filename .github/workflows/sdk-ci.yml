@@ -313,7 +313,10 @@ jobs:
         # whether or not `--strict` is set, so taking nengok out of the
         # picture entirely is the only invocation that stays portable.
         # Real dependency CVEs still exit 1, which is the gate we want.
+        # pip itself is part of the audited environment, so upgrade it
+        # first; the runner image lags pip's own security releases.
         run: |
+          pip install --upgrade pip
           pip install pip-audit
           pip uninstall -y nengok
           pip-audit
