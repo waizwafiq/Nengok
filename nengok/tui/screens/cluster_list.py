@@ -43,7 +43,7 @@ class ClusterListScreen(Screen):
             self._status = Static("Loading clusters...", id="cluster-list-status")
             yield self._status
             self._table = DataTable(zebra_stripes=True, cursor_type="row")
-            self._table.add_columns("ID", "Name", "Status", "Members", "Updated")
+            self._table.add_columns("ID", "Name", "Project", "Status", "Members", "Updated")
             yield self._table
         yield Footer()
 
@@ -97,10 +97,11 @@ class ClusterListScreen(Screen):
         for row in clusters:
             cluster_id = str(row.get("cluster_id", ""))
             name = str(row.get("name", "<unnamed>"))
+            project = str(row.get("project") or "-")
             status = str(row.get("status", "open"))
             members = _member_count(row.get("member_spans_json"))
             updated = str(row.get("updated_at", ""))
-            self._table.add_row(cluster_id, name, status, str(members), updated)
+            self._table.add_row(cluster_id, name, project, status, str(members), updated)
             self._cluster_ids.append(cluster_id)
 
         if not clusters:
