@@ -189,6 +189,16 @@ class StateStore:
                 ),
             )
 
+    def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
+        """Point `nengok_seen_spans` rows at the cluster that absorbed them."""
+        if not span_ids:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                "UPDATE nengok_seen_spans SET cluster_id = ? WHERE span_id = ?",
+                [(cluster_id, span_id) for span_id in span_ids],
+            )
+
     def mark_status(self, cluster_id: str, status: ClusterStatus) -> None:
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:

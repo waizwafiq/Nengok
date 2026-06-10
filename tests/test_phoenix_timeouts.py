@@ -124,6 +124,13 @@ class _State:
     def deduplicate(self, anomalies: list[AnomalousSpan]) -> list[AnomalousSpan]:
         return anomalies
 
+    def list_clusters(self, **kwargs: object) -> list[dict]:
+        del kwargs
+        return []
+
+    def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
+        del span_ids, cluster_id
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 
@@ -209,6 +216,7 @@ def _build_orchestrator(
     tmp_path: Path, *, raise_on: set[str], clusters: list[Cluster]
 ) -> tuple[Orchestrator, _State, _BoomRunner]:
     config = NengokConfig.load(
+        min_cluster_size=1,
         config_path=tmp_path / "missing.toml",
         phoenix_base_url="http://localhost:6006",
         google_api_key="AIzaTEST",

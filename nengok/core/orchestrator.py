@@ -27,6 +27,7 @@ from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.diagnoser.clusterer import Clusterer
 from nengok.core.diagnoser.hypothesizer import Hypothesizer
+from nengok.core.diagnoser.matcher import ClusterMatcher
 from nengok.core.fixer.experiment_runner import ExperimentRunner
 from nengok.core.fixer.prompt_proposer import PromptProposer
 from nengok.core.fixer.test_generator import TestGenerator
@@ -54,13 +55,13 @@ from nengok.errors import (
     TriageError,
 )
 from nengok.notifiers.dispatcher import NotifierDispatcher
-from nengok.notifiers.events import ExperimentSummary, FixProposedEvent
+from nengok.notifiers.events import EscalationEvent, ExperimentSummary, FixProposedEvent
 from nengok.phoenix.client import PhoenixWrapper
 from nengok.phoenix.mcp import MCPError
 from nengok.runners.agent_runner import register_runner
 from nengok.runners.loader import load_runner
 from nengok.server import metrics
-from nengok.state.store import StateStore
+from nengok.state.store import StateStore, cluster_from_row
 from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import get_logger, run_context
 from nengok.utils.tracing import get_tracer, register_meta_tracer, set_attributes
@@ -86,6 +87,7 @@ class Orchestrator:
         self._sampler = SpanSampler(self._phoenix, self.config)
         self._anomaly_filter = AnomalyFilter()
         self._clusterer = Clusterer(self.config, redactor=self._redactor)
+        self._matcher = ClusterMatcher(self.config)
         self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix, redactor=self._redactor)
 
         self._test_generator = TestGenerator(self.config)
@@ -228,32 +230,53 @@ class Orchestrator:
 
                 baseline_prompt = self._prompt_proposer.load_baseline_prompt()
 
+                artifacts: list[FixArtifact] = []
+                escalations = 0
+
                 with (
                     run_context(stage="diagnoser"),
                     tracer.start_as_current_span("diagnoser") as diagnoser_span,
                 ):
                     self.current_stage = "diagnoser"
                     raw_clusters = self._clusterer.cluster(new_anomalies)
+                    known = [cluster_from_row(row) for row in self._state.list_clusters()]
+                    known_by_id = {c.cluster_id: c for c in known}
+
                     clusters: list[Cluster] = []
+                    merged_count = 0
                     for raw in raw_clusters:
-                        hypothesis = self._hypothesizer.hypothesize(raw, current_prompt=baseline_prompt)
-                        clusters.append(
-                            raw.model_copy(
-                                update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED}
-                            )
-                        )
-                        self._state.upsert_cluster(
-                            clusters[-1],
-                            first_seen=_earliest_span_time(clusters[-1], new_anomalies),
-                        )
-                    set_attributes(diagnoser_span, {"nengok.diagnoser.cluster_count": len(clusters)})
-                    logger.info("Diagnoser: %d clusters with hypotheses", len(clusters))
+                        match_id = self._matcher.match(raw, known)
+                        prior = known_by_id.get(match_id) if match_id is not None else None
+                        merged = raw if prior is None else _merge_into_existing(raw, prior)
+                        if prior is not None:
+                            merged_count += 1
 
-                clusters_discovered = len(clusters)
+                        decision = self._apply_identity_policy(
+                            merged=merged,
+                            prior=prior,
+                            anomalies=new_anomalies,
+                            baseline_prompt=baseline_prompt,
+                        )
+                        if decision is not None:
+                            clusters.append(decision)
+                        elif prior is not None and prior.status is ClusterStatus.APPROVED:
+                            escalations += 1
+
+                    set_attributes(
+                        diagnoser_span,
+                        {
+                            "nengok.diagnoser.cluster_count": len(clusters),
+                            "nengok.diagnoser.merged_count": merged_count,
+                        },
+                    )
+                    logger.info(
+                        "Diagnoser: %d clusters with hypotheses (%d merged into known clusters)",
+                        len(clusters),
+                        merged_count,
+                    )
+
+                clusters_discovered = len(raw_clusters)
                 signal_counts = _signal_counts_by_cluster(clusters, new_anomalies)
-
-                artifacts: list[FixArtifact] = []
-                escalations = 0
 
                 for index, cluster in enumerate(clusters):
                     assert cluster.hypothesis is not None
@@ -386,6 +409,84 @@ class Orchestrator:
             )
             raise
 
+    def _apply_identity_policy(
+        self,
+        *,
+        merged: Cluster,
+        prior: Cluster | None,
+        anomalies: list[AnomalousSpan],
+        baseline_prompt: str | None,
+    ) -> Cluster | None:
+        """
+        Persist the matched cluster under the status policy and return the
+        diagnosed cluster when the fixer should run, else None.
+
+        REJECTED / DISMISSED re-accrete silently (the no-re-alert promise
+        from proposal Section 3.3 Step 7). APPROVED means the approved fix
+        did not hold: escalate with reason `fix_regressed` and notify.
+        FIX_PROPOSED / ESCALATED attach spans and keep their status. The
+        rest run the hypothesizer unless held below `min_cluster_size`.
+        """
+        if prior is not None and prior.status in (ClusterStatus.REJECTED, ClusterStatus.DISMISSED):
+            self._persist_identity(merged.model_copy(update={"status": prior.status}), anomalies)
+            logger.info(
+                "Cluster '%s' re-accreted silently (status=%s); a reviewer already declined it",
+                merged.name,
+                prior.status.value,
+            )
+            return None
+
+        if prior is not None and prior.status is ClusterStatus.APPROVED:
+            escalated = merged.model_copy(update={"status": ClusterStatus.ESCALATED})
+            self._persist_identity(escalated, anomalies)
+            self._notify_fix_regressed(escalated)
+            logger.warning(
+                "Cluster '%s' escalated: fix_regressed (approved fix did not hold)",
+                merged.name,
+            )
+            return None
+
+        if prior is not None and prior.status in (ClusterStatus.FIX_PROPOSED, ClusterStatus.ESCALATED):
+            self._persist_identity(merged.model_copy(update={"status": prior.status}), anomalies)
+            return None
+
+        if len(merged.member_span_ids) < self.config.min_cluster_size:
+            self._persist_identity(merged.model_copy(update={"status": ClusterStatus.OPEN}), anomalies)
+            logger.info(
+                "Cluster '%s' held back: %d member(s) below min_cluster_size=%d",
+                merged.name,
+                len(merged.member_span_ids),
+                self.config.min_cluster_size,
+            )
+            return None
+
+        hypothesis = self._hypothesizer.hypothesize(merged, current_prompt=baseline_prompt)
+        diagnosed = merged.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
+        self._persist_identity(diagnosed, anomalies)
+        return diagnosed
+
+    def _persist_identity(self, cluster: Cluster, anomalies: list[AnomalousSpan]) -> None:
+        self._state.upsert_cluster(cluster, first_seen=_earliest_span_time(cluster, anomalies))
+        self._state.assign_spans_to_cluster(cluster.member_span_ids, cluster.cluster_id)
+
+    def _notify_fix_regressed(self, cluster: Cluster) -> None:
+        if not self._notifier_dispatcher:
+            return
+        dashboard_url = (
+            f"{self.config.slack_dashboard_base_url.rstrip('/')}/clusters/{cluster.cluster_id}"
+            if self.config.slack_dashboard_base_url
+            else None
+        )
+        self._notifier_dispatcher.dispatch(
+            EscalationEvent(
+                cluster_id=cluster.cluster_id,
+                cluster_name=cluster.name,
+                status=ClusterStatus.ESCALATED.value,
+                reason="fix_regressed",
+                dashboard_url=dashboard_url,
+            )
+        )
+
     def _decide_triage(self) -> TriageVerdict | None:
         """
         Run the ADK triage gate and return its verdict, or None when off.
@@ -505,6 +606,7 @@ class Orchestrator:
 
     def _attach_cost_tracker(self, cost_tracker: CostTracker) -> None:
         self._clusterer.cost_tracker = cost_tracker
+        self._matcher.cost_tracker = cost_tracker
         self._hypothesizer.cost_tracker = cost_tracker
         self._test_generator.cost_tracker = cost_tracker
         self._prompt_proposer.cost_tracker = cost_tracker
@@ -613,6 +715,19 @@ class Orchestrator:
             title=f"Phoenix timeout while processing cluster {cluster.name}",
             body="\n".join(body_lines),
         )
+
+
+def _merge_into_existing(raw: Cluster, prior: Cluster) -> Cluster:
+    """Adopt the prior cluster's id and union members and signals into it."""
+    member_ids = list(dict.fromkeys([*prior.member_span_ids, *raw.member_span_ids]))
+    return raw.model_copy(
+        update={
+            "cluster_id": prior.cluster_id,
+            "member_span_ids": member_ids,
+            "signals": sorted(set(prior.signals) | set(raw.signals)),
+            "created_at": prior.created_at,
+        }
+    )
 
 
 def _signal_counts_by_cluster(
