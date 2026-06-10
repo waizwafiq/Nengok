@@ -35,6 +35,41 @@ cycle_duration_seconds = Histogram(
     labelnames=("stage",),
 )
 
+triage_total = Counter(
+    "nengok_triage_total",
+    "Triage decisions, labeled by path (adk|fallback) and outcome (investigate|skip).",
+    labelnames=("path", "outcome"),
+)
+
+triage_duration_seconds = Histogram(
+    "nengok_triage_duration_seconds",
+    "Wall-clock duration of the triage gate per cycle.",
+)
+
+triage_errors_total = Counter(
+    "nengok_triage_errors_total",
+    "Triage failures that fell back to the deterministic filter, labeled by error class.",
+    labelnames=("error_class",),
+)
+
+
+def triage_path_counts() -> dict[str, float]:
+    """
+    Sum the triage counter by path for this process.
+
+    `/health` uses this to surface the adk-to-fallback ratio; a flip to
+    mostly-fallback is the early warning that the ADK path is broken.
+    """
+    counts = {"adk": 0.0, "fallback": 0.0}
+    for metric in triage_total.collect():
+        for sample in metric.samples:
+            if not sample.name.endswith("_total"):
+                continue
+            path = sample.labels.get("path")
+            if path in counts:
+                counts[path] += sample.value
+    return counts
+
 
 def render_text() -> tuple[bytes, str]:
     """Return the Prometheus text exposition and its Content-Type."""

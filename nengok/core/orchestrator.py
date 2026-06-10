@@ -51,6 +51,7 @@ from nengok.phoenix.client import PhoenixWrapper
 from nengok.phoenix.mcp import MCPError
 from nengok.runners.agent_runner import register_runner
 from nengok.runners.loader import load_runner
+from nengok.server import metrics
 from nengok.state.store import StateStore
 from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import get_logger, run_context
@@ -404,6 +405,7 @@ class Orchestrator:
                 TriageError,
             ) as exc:
                 triage_path = "fallback"
+                metrics.triage_errors_total.labels(error_class=type(exc).__name__).inc()
                 logger.warning(
                     "Triage failed (%s); falling back to the deterministic anomaly filter",
                     type(exc).__name__,
@@ -416,6 +418,11 @@ class Orchestrator:
                     reason="triage_fallback",
                 )
             duration_s = time.perf_counter() - started
+            metrics.triage_duration_seconds.observe(duration_s)
+            metrics.triage_total.labels(
+                path=triage_path,
+                outcome="investigate" if verdict.investigate else "skip",
+            ).inc()
             set_attributes(
                 triage_span,
                 {

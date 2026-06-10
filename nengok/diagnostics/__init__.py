@@ -18,6 +18,7 @@ from nengok.diagnostics.db_privileges import probe_db_privileges
 from nengok.diagnostics.gemini_probe import probe_gemini
 from nengok.diagnostics.phoenix_probe import probe_phoenix
 from nengok.diagnostics.phoenix_project_probe import probe_phoenix_project
+from nengok.diagnostics.triage_probe import probe_triage
 
 DEFAULT_PROBES: tuple[Probe, ...] = (
     probe_config_file,
@@ -27,6 +28,7 @@ DEFAULT_PROBES: tuple[Probe, ...] = (
     probe_db_privileges,
     probe_baseline_prompt,
     probe_agent_runner,
+    probe_triage,
 )
 
 __all__ = [
@@ -41,4 +43,5 @@ __all__ = [
     "probe_gemini",
     "probe_phoenix",
     "probe_phoenix_project",
+    "probe_triage",
 ]

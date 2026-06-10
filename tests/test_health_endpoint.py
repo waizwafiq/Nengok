@@ -61,7 +61,9 @@ def test_health_endpoint_returns_expected_payload_shape(tmp_path: Path) -> None:
         "phoenix_reachable": True,
         "gemini_reachable": True,
         "db_writable": True,
+        "triage_adk_ratio": payload["triage_adk_ratio"],
     }
+    assert payload["triage_adk_ratio"] is None or 0.0 <= payload["triage_adk_ratio"] <= 1.0
 
 
 def test_health_endpoint_requires_no_auth_even_when_token_set(tmp_path: Path) -> None:
