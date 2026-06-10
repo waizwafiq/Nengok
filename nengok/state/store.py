@@ -447,12 +447,21 @@ class StateStore:
                 ),
             )
 
-    def dashboard_overview(self) -> dict:
-        """Aggregated metrics for the executive dashboard panel."""
+    def dashboard_overview(self, *, project: str | None = None) -> dict:
+        """
+        Aggregated metrics for the executive dashboard panel.
+
+        When `project` is given, the cluster-derived aggregates (status
+        counts, MTTD, MTTR, close rate) narrow to that project; spend
+        and cycle history stay process-wide because cycles cover every
+        configured project at once.
+        """
+        project_clause = " AND project = ?" if project is not None else ""
+        project_params: tuple = (project,) if project is not None else ()
         with self._connect() as conn:
-            status_rows = conn.execute(
-                "SELECT status, COUNT(*) AS n FROM nengok_clusters GROUP BY status"
-            ).fetchall()
+            status_sql = "SELECT status, COUNT(*) AS n FROM nengok_clusters WHERE 1=1"
+            status_sql += project_clause + " GROUP BY status"
+            status_rows = conn.execute(status_sql, project_params).fetchall()
             by_status: dict[str, int] = {row["status"]: row["n"] for row in status_rows}
             approved = by_status.get(ClusterStatus.APPROVED.value, 0)
             open_count = by_status.get(ClusterStatus.OPEN.value, 0)
@@ -461,17 +470,17 @@ class StateStore:
             active = approved + open_count + diagnosed + escalated
             close_rate = approved / active if active else 0.0
 
-            mttd_row = conn.execute(
-                """
+            mttd_sql = """
                 SELECT AVG(
                     (julianday(diagnosed_at) - julianday(first_seen)) * 86400.0
                 ) AS seconds
                 FROM nengok_clusters
                 WHERE first_seen IS NOT NULL AND diagnosed_at IS NOT NULL
                 """
-            ).fetchone()
-            mttr_row = conn.execute(
-                """
+            mttd_sql += project_clause
+            mttd_row = conn.execute(mttd_sql, project_params).fetchone()
+
+            mttr_sql = """
                 SELECT AVG(
                     (julianday(a.created_at) - julianday(c.diagnosed_at)) * 86400.0
                 ) AS seconds
@@ -479,7 +488,9 @@ class StateStore:
                 JOIN nengok_approvals a ON a.cluster_id = c.cluster_id
                 WHERE a.decision = 'approved' AND c.diagnosed_at IS NOT NULL
                 """
-            ).fetchone()
+            if project is not None:
+                mttr_sql += " AND c.project = ?"
+            mttr_row = conn.execute(mttr_sql, project_params).fetchone()
 
             regression_row = conn.execute(
                 """

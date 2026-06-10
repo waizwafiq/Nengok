@@ -16,8 +16,9 @@ router = APIRouter(prefix="/clusters", tags=["clusters"])
 def list_clusters(
     store: StoreDep,
     status: Annotated[ClusterStatus | None, Query()] = None,
+    project: Annotated[str | None, Query()] = None,
 ) -> list[dict]:
-    return store.list_clusters(status=status)
+    return store.list_clusters(status=status, project=project)
 
 
 @router.get("/{cluster_id}")
