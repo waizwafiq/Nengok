@@ -9,6 +9,7 @@ with an in-memory fake.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from nengok.config import NengokConfig
 from nengok.core.types import TraceSpan
@@ -23,8 +24,24 @@ class SpanSampler:
     phoenix: PhoenixWrapper
     config: NengokConfig
 
-    def sample(self) -> list[TraceSpan]:
+    def sample(
+        self,
+        *,
+        project_identifier: str | None = None,
+        window_minutes: int | None = None,
+    ) -> list[TraceSpan]:
+        """
+        Pull recent spans, optionally narrowed by the triage verdict.
+
+        The triage gate at the head of the cycle may point the Observer
+        at a different project and a tighter time window than the
+        configured defaults.
+        """
+        start_time = None
+        if window_minutes is not None:
+            start_time = datetime.now(UTC) - timedelta(minutes=window_minutes)
         return self.phoenix.get_spans(
-            project_identifier=self.config.project_identifier,
+            project_identifier=project_identifier or self.config.project_identifier,
             limit=self.config.span_limit,
+            start_time=start_time,
         )

@@ -282,6 +282,10 @@ def run(
         bool,
         typer.Option("--skip-preflight", help="Skip the MCP project existence check."),
     ] = False,
+    no_triage: Annotated[
+        bool,
+        typer.Option("--no-triage", help="Skip the ADK triage gate and run the pipeline directly."),
+    ] = False,
     log_format: Annotated[
         str,
         typer.Option("--log-format", help="Log output format: text (default) or json."),
@@ -293,7 +297,10 @@ def run(
 
     configure_logging(json_format=log_format == "json")
 
-    config = _load_config(project_identifier=project)
+    config = _load_config(
+        project_identifier=project,
+        triage_enabled=False if no_triage else None,
+    )
     if not skip_preflight:
         run_preflight(config, echo=lambda msg: typer.echo(msg, err=True))
 
@@ -321,6 +328,10 @@ def watch(
     project: Annotated[
         str | None, typer.Option("--project", help="Override the configured Phoenix project.")
     ] = None,
+    no_triage: Annotated[
+        bool,
+        typer.Option("--no-triage", help="Skip the ADK triage gate and run the pipeline directly."),
+    ] = False,
     log_format: Annotated[
         str,
         typer.Option("--log-format", help="Log output format: json (default) or text."),
@@ -341,7 +352,10 @@ def watch(
 
     configure_logging(json_format=log_format == "json")
 
-    config = _load_config(project_identifier=project)
+    config = _load_config(
+        project_identifier=project,
+        triage_enabled=False if no_triage else None,
+    )
     orchestrator = Orchestrator(config=config)
     breaker = CircuitBreaker(
         threshold=config.circuit_breaker_consecutive_failures,

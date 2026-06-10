@@ -2,14 +2,15 @@
 ADK triage agent that gates every Nengok cycle.
 
 An ``LlmAgent`` from the Google Agent Development Kit, armed with an
-``MCPToolset`` pointed at the pinned ``@arizeai/phoenix-mcp`` package,
-inspects recent Phoenix traffic and returns a :class:`TriageVerdict`
-that tells the orchestrator whether the deterministic pipeline should
-wake. The Diagnoser, Fixer, and Verifier stay deterministic on purpose;
-this module is the single ADK surface in the loop.
+MCP toolset (``McpToolset``, the 2.x spelling of ``MCPToolset``)
+pointed at the pinned ``@arizeai/phoenix-mcp`` package, inspects recent
+Phoenix traffic and returns a :class:`TriageVerdict` that tells the
+orchestrator whether the deterministic pipeline should wake. The
+Diagnoser, Fixer, and Verifier stay deterministic on purpose; this
+module is the single ADK surface in the loop.
 
 Every ``google.adk`` import below is verified against the exact
-``google-adk==2.2.0`` pin in ``pyproject.toml``. The MCPToolset module
+``google-adk==2.2.0`` pin in ``pyproject.toml``. The MCP toolset module
 path has moved between ADK releases, so bumping the pin means
 re-verifying these imports against that version's reference docs.
 """
@@ -31,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nengok.config import NengokConfig
 from nengok.errors import OptionalDependencyError, TriageError
+from nengok.phoenix.mcp import MCPError
 from nengok.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -130,10 +132,18 @@ def run_triage(config: NengokConfig, *, runner_factory: RunnerFactory | None = N
         )
 
     try:
-        return asyncio.run(_bounded())
-    except ValidationError:
-        logger.warning("Triage verdict failed schema validation; retrying once with a fresh session")
-        return asyncio.run(_bounded())
+        try:
+            return asyncio.run(_bounded())
+        except ValidationError:
+            logger.warning("Triage verdict failed schema validation; retrying once with a fresh session")
+            return asyncio.run(_bounded())
+    except (ValidationError, TimeoutError, OptionalDependencyError, TriageError, MCPError):
+        raise
+    except Exception as exc:
+        # ADK surfaces model/auth/transport failures as its own exception
+        # types; translate them so the orchestrator's fallback catches
+        # one stable class instead of chasing ADK internals.
+        raise TriageError(f"Triage agent failed: {type(exc).__name__}: {exc}") from exc
 
 
 async def _run_triage_async(config: NengokConfig, factory: RunnerFactory) -> TriageVerdict:
@@ -172,7 +182,7 @@ def _build_runner(config: NengokConfig) -> Any:
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
         from google.adk.tools.mcp_tool.mcp_toolset import (
-            MCPToolset,
+            McpToolset,
             StdioConnectionParams,
             StdioServerParameters,
         )
@@ -184,7 +194,7 @@ def _build_runner(config: NengokConfig) -> Any:
             install_hint=ADK_INSTALL_HINT,
         ) from exc
 
-    phoenix_mcp = MCPToolset(
+    phoenix_mcp = McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=config.mcp_npx_command,

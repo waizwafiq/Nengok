@@ -249,6 +249,7 @@ def _build_orchestrator(
         artifacts_dir=tmp_path / "artifacts",
         state_db_path=tmp_path / "state.db",
         project_identifier="travel-planner-agent",
+        triage_enabled=False,
     )
     orch = Orchestrator(config=config)
     anomalies = [_make_anomaly(c.cluster_id) for c in clusters]
