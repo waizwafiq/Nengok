@@ -38,6 +38,7 @@ class ClusterDetailScreen(Screen):
         self._cluster: dict[str, Any] | None = None
         self._experiment: dict[str, Any] | None = None
         self._artifacts: dict[str, Any] | None = None
+        self._links: list[dict[str, Any]] = []
         self._toast: Static | None = None
 
     def compose(self) -> ComposeResult:
@@ -56,6 +57,10 @@ class ClusterDetailScreen(Screen):
                     yield Static("(loading)", id="prompt-body")
                 with TabPane("RCA", id="tab-rca"):
                     yield Static("(loading)", id="rca-body")
+                with TabPane("Links", id="tab-links"):
+                    links_table = DataTable(zebra_stripes=True, id="links-table")
+                    links_table.add_columns("Project", "Cluster", "Status", "Confidence", "Rationale")
+                    yield links_table
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -71,11 +76,13 @@ class ClusterDetailScreen(Screen):
 
         self._experiment = await app.api_client.latest_experiment(self.cluster_id)
         self._artifacts = await app.api_client.get_artifacts(self.cluster_id)
+        self._links = await app.api_client.list_cluster_links(self.cluster_id)
 
         self._render_hypothesis()
         self._render_experiment()
         self._render_prompt()
         self._render_rca()
+        self._render_links()
         name = self._cluster.get("name", self.cluster_id)
         self._update_toast(f"{name} ({self.cluster_id}). a=approve, x=reject, Esc=back.")
 
@@ -118,6 +125,21 @@ class ClusterDetailScreen(Screen):
         body = self.query_one("#rca-body", Static)
         text = (self._artifacts or {}).get("rca") if self._artifacts else None
         body.update(str(text) if text else "No RCA recorded for this cluster yet.")
+
+    def _render_links(self) -> None:
+        table = self.query_one("#links-table", DataTable)
+        table.clear()
+        for link in self._links:
+            if not isinstance(link, dict):
+                continue
+            confidence = link.get("confidence")
+            table.add_row(
+                str(link.get("linked_project") or "-"),
+                str(link.get("linked_name") or link.get("linked_cluster_id") or "<cluster>"),
+                str(link.get("linked_status") or "-"),
+                f"{confidence:.2f}" if isinstance(confidence, int | float) else "-",
+                str(link.get("rationale") or ""),
+            )
 
     def action_approve(self) -> None:
         self._open_modal("approved")

@@ -90,6 +90,16 @@ class TuiApiClient:
             assert isinstance(payload, dict)
             return payload
 
+    async def list_cluster_links(self, cluster_id: str) -> list[dict[str, Any]]:
+        async with self._client() as client:
+            response = await client.get(f"/api/v1/clusters/{cluster_id}/links")
+            if response.status_code == 404:
+                return []
+            response.raise_for_status()
+            payload = response.json()
+            assert isinstance(payload, list)
+            return payload
+
     async def get_artifacts(self, cluster_id: str) -> dict[str, Any] | None:
         async with self._client() as client:
             response = await client.get(f"/api/v1/artifacts/{cluster_id}")
