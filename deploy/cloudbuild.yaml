@@ -1,0 +1,16 @@
+# Build the hosted-dashboard image with the repo root as the Docker build
+# context. deploy/Dockerfile COPYs frontend/, nengok/, and sample_agent/ from
+# the root, so a Dockerfile-type trigger (which uses deploy/ as the context)
+# cannot build this image. Run from the repo root:
+#   gcloud builds submit --config deploy/cloudbuild.yaml .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - deploy/Dockerfile
+      - -t
+      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nengok/nengok-dashboard:manual
+      - .
+images:
+  - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nengok/nengok-dashboard:manual

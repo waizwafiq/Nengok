@@ -1,0 +1,5 @@
+# Controls what `gcloud builds submit` uploads as build source.
+.gcloudignore
+.git
+#!include:.gitignore
+.claude/
