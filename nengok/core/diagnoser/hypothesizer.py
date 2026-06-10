@@ -42,13 +42,22 @@ class Hypothesizer:
         cluster: Cluster,
         *,
         current_prompt: str | None = None,
+        linked_summaries: list[str] | None = None,
     ) -> RootCauseHypothesis:
-        """Return a structured root-cause hypothesis for ``cluster``."""
+        """
+        Return a structured root-cause hypothesis for ``cluster``.
+
+        ``linked_summaries`` carries hypothesis summaries from clusters
+        in other monitored agents that the cross-agent linker confirmed
+        share an upstream cause, so the diagnosis names the shared
+        upstream instead of rediscovering it per agent.
+        """
         exemplars = self._load_exemplars(cluster)
         return self._call_gemini_diagnoser(
             cluster=cluster,
             exemplars=exemplars,
             current_prompt=current_prompt,
+            linked_summaries=linked_summaries,
         )
 
     def _load_exemplars(self, cluster: Cluster) -> list[TraceSpan]:
@@ -65,6 +74,7 @@ class Hypothesizer:
         cluster: Cluster,
         exemplars: list[TraceSpan],
         current_prompt: str | None,
+        linked_summaries: list[str] | None = None,
     ) -> RootCauseHypothesis:
         """
         Ask Gemini for a structured root-cause hypothesis.
@@ -81,6 +91,7 @@ class Hypothesizer:
             current_prompt=current_prompt,
             char_budget=self.config.cluster_trace_char_budget,
             redactor=redactor,
+            linked_summaries=linked_summaries,
         )
         gemini = self.gemini_call or self._default_gemini_call
         raw = gemini(prompt)
@@ -154,16 +165,26 @@ def _build_diagnoser_prompt(
     current_prompt: str | None,
     char_budget: int,
     redactor: Redactor,
+    linked_summaries: list[str] | None = None,
 ) -> str:
     schema_hint = json.dumps(RootCauseHypothesis.model_json_schema(), indent=2)
     rows = _exemplar_rows(cluster, exemplars, char_budget, redactor=redactor)
     prompt_block = current_prompt.strip() if current_prompt else "(baseline prompt not provided)"
+
+    linked_block = ""
+    if linked_summaries:
+        lines = "\n".join(f"- {summary}" for summary in linked_summaries)
+        linked_block = (
+            "Confirmed linked clusters in other monitored agents point at a "
+            f"shared upstream cause:\n{lines}\n\n"
+        )
 
     return (
         "You are diagnosing a single failure cluster from an LLM agent's "
         "production traces.\n\n"
         f"Cluster name: {cluster.name}\n"
         f"Cluster description: {cluster.description}\n\n"
+        f"{linked_block}"
         "Current agent prompt:\n"
         "----- BEGIN PROMPT -----\n"
         f"{prompt_block}\n"

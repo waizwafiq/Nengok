@@ -72,6 +72,18 @@ class _RecordingState:
     def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
         del span_ids, cluster_id
 
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        del cluster_id
+        return []
+
+    def list_recent_active_clusters(self, *, since: object) -> list[dict]:
+        del since
+        return []
+
+    def insert_cluster_link(self, **kwargs: object) -> str | None:
+        del kwargs
+        return None
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 

@@ -14,10 +14,11 @@ for this self-observability.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
 from pydantic import ValidationError
@@ -26,6 +27,7 @@ from nengok.agents.triage import TriageVerdict, run_triage, triage_disabled_reas
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
 from nengok.core.diagnoser.clusterer import Clusterer
+from nengok.core.diagnoser.cross_agent import CrossAgentLinker
 from nengok.core.diagnoser.hypothesizer import Hypothesizer
 from nengok.core.diagnoser.matcher import ClusterMatcher
 from nengok.core.fixer.experiment_runner import ExperimentRunner
@@ -88,6 +90,7 @@ class Orchestrator:
         self._anomaly_filter = AnomalyFilter()
         self._clusterer = Clusterer(self.config, redactor=self._redactor)
         self._matcher = ClusterMatcher(self.config)
+        self._linker = CrossAgentLinker(self.config)
         self._hypothesizer = Hypothesizer(self.config, phoenix=self._phoenix, redactor=self._redactor)
 
         self._test_generator = TestGenerator(self.config)
@@ -286,6 +289,15 @@ class Orchestrator:
                             merged_count,
                         )
 
+                if clusters:
+                    with (
+                        run_context(stage="linker"),
+                        tracer.start_as_current_span("linker") as linker_span,
+                    ):
+                        self.current_stage = "linker"
+                        links_created = self._run_cross_agent_linker(clusters)
+                        set_attributes(linker_span, {"nengok.linker.links_created": links_created})
+
                 signal_counts = _signal_counts_by_cluster(clusters, all_new_anomalies)
 
                 for index, cluster in enumerate(clusters):
@@ -477,7 +489,11 @@ class Orchestrator:
             )
             return None
 
-        hypothesis = self._hypothesizer.hypothesize(merged, current_prompt=baseline_prompt)
+        hypothesis = self._hypothesizer.hypothesize(
+            merged,
+            current_prompt=baseline_prompt,
+            linked_summaries=self._linked_hypothesis_summaries(merged.cluster_id),
+        )
         diagnosed = merged.model_copy(update={"hypothesis": hypothesis, "status": ClusterStatus.DIAGNOSED})
         self._persist_identity(diagnosed, anomalies)
         return diagnosed
@@ -485,6 +501,59 @@ class Orchestrator:
     def _persist_identity(self, cluster: Cluster, anomalies: list[AnomalousSpan]) -> None:
         self._state.upsert_cluster(cluster, first_seen=_earliest_span_time(cluster, anomalies))
         self._state.assign_spans_to_cluster(cluster.member_span_ids, cluster.cluster_id)
+
+    def _linked_hypothesis_summaries(self, cluster_id: str) -> list[str]:
+        """Return sibling hypothesis summaries from confirmed cross-agent links."""
+        summaries: list[str] = []
+        for row in self._state.list_cluster_links(cluster_id):
+            hypothesis_json = row.get("linked_hypothesis_json")
+            if not hypothesis_json:
+                continue
+            try:
+                summary = json.loads(hypothesis_json).get("summary")
+            except (json.JSONDecodeError, AttributeError):
+                continue
+            if summary:
+                label = f"{row.get('linked_project') or 'unknown-project'} / {row.get('linked_name')}"
+                summaries.append(f"[{label}] {summary}")
+        return summaries
+
+    def _run_cross_agent_linker(self, cycle_clusters: list[Cluster]) -> int:
+        """
+        Confirm cross-project links for this cycle's clusters.
+
+        The candidate pool is this cycle's diagnosed clusters plus every
+        active cluster the store touched inside the lookback window. The
+        store reads close before the judge calls fire, honoring the
+        no-Gemini-inside-a-transaction rule.
+        """
+        since = datetime.now(UTC) - timedelta(days=self.config.cluster_link_lookback_days)
+        recent = [cluster_from_row(row) for row in self._state.list_recent_active_clusters(since=since)]
+        pool: dict[str, Cluster] = {c.cluster_id: c for c in recent}
+        pool.update({c.cluster_id: c for c in cycle_clusters})
+
+        projects = {c.project for c in pool.values() if c.project}
+        if len(projects) < 2:
+            return 0
+
+        links = self._linker.link(list(pool.values()))
+        created = 0
+        for link in links:
+            link_id = self._state.insert_cluster_link(
+                cluster_id_a=link.cluster_id_a,
+                cluster_id_b=link.cluster_id_b,
+                confidence=link.confidence,
+                rationale=link.rationale,
+            )
+            if link_id is not None:
+                created += 1
+                logger.info(
+                    "Cross-agent link confirmed: %s <-> %s (confidence=%.2f)",
+                    link.cluster_id_a,
+                    link.cluster_id_b,
+                    link.confidence,
+                )
+        return created
 
     def _notify_fix_regressed(self, cluster: Cluster) -> None:
         if not self._notifier_dispatcher:
@@ -646,6 +715,7 @@ class Orchestrator:
     def _attach_cost_tracker(self, cost_tracker: CostTracker) -> None:
         self._clusterer.cost_tracker = cost_tracker
         self._matcher.cost_tracker = cost_tracker
+        self._linker.cost_tracker = cost_tracker
         self._hypothesizer.cost_tracker = cost_tracker
         self._test_generator.cost_tracker = cost_tracker
         self._prompt_proposer.cost_tracker = cost_tracker

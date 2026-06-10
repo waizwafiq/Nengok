@@ -132,6 +132,18 @@ class _State:
     def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
         del span_ids, cluster_id
 
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        del cluster_id
+        return []
+
+    def list_recent_active_clusters(self, *, since: object) -> list[dict]:
+        del since
+        return []
+
+    def insert_cluster_link(self, **kwargs: object) -> str | None:
+        del kwargs
+        return None
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         del cluster, first_seen
 
@@ -155,7 +167,14 @@ class _Clusterer:
 
 
 class _Hypothesizer:
-    def hypothesize(self, cluster: Cluster, *, current_prompt: str | None = None) -> RootCauseHypothesis:
+    def hypothesize(
+        self,
+        cluster: Cluster,
+        *,
+        current_prompt: str | None = None,
+        linked_summaries: list[str] | None = None,
+    ) -> RootCauseHypothesis:
+        del linked_summaries
         del current_prompt
         assert cluster.hypothesis is not None
         return cluster.hypothesis

@@ -175,6 +175,16 @@ class _StaticBaselineLoader:
         return f"baseline for {project_name}"
 
 
+class _NullLinker:
+    def __init__(self) -> None:
+        self.calls: list[list[Cluster]] = []
+        self.cost_tracker: Any = None
+
+    def link(self, clusters: list[Cluster]) -> list[Any]:
+        self.calls.append(clusters)
+        return []
+
+
 def _config(tmp_path: Path, **overrides: Any) -> NengokConfig:
     return NengokConfig.load(
         config_path=tmp_path / "missing.toml",
@@ -198,9 +208,11 @@ def test_cycle_covers_every_configured_project(tmp_path: Path) -> None:
             "proj-b": [_span("b-1")],
         }
     )
+    linker = _NullLinker()
     orch._sampler = sampler
     orch._anomaly_filter = _PassThroughFilter()
     orch._clusterer = _PerBatchClusterer()
+    orch._linker = linker
     orch._hypothesizer = Hypothesizer(config=config, gemini_call=lambda _: _HYPOTHESIS_JSON)
     orch._test_generator = TestGenerator(config=config, gemini_call=lambda _: _CASES_JSON)
     orch._prompt_proposer = PromptProposer(
@@ -215,6 +227,7 @@ def test_cycle_covers_every_configured_project(tmp_path: Path) -> None:
 
     assert sampler.calls == ["proj-a", "proj-b"]
     assert result.clusters_detected == 2
+    assert len(linker.calls) == 1
 
     conn = sqlite3.connect(tmp_path / "state.db")
     conn.row_factory = sqlite3.Row
@@ -243,6 +256,7 @@ def test_quiet_project_skips_diagnosis(tmp_path: Path) -> None:
     orch._sampler = sampler
     orch._anomaly_filter = _PassThroughFilter()
     orch._clusterer = _PerBatchClusterer()
+    orch._linker = _NullLinker()
     orch._hypothesizer = Hypothesizer(config=config, gemini_call=fake_hypothesizer)
     orch._test_generator = TestGenerator(config=config, gemini_call=lambda _: _CASES_JSON)
     orch._prompt_proposer = PromptProposer(

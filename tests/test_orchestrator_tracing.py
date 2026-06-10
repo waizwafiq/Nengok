@@ -122,6 +122,18 @@ class _State:
     def assign_spans_to_cluster(self, span_ids: list[str], cluster_id: str) -> None:
         del span_ids, cluster_id
 
+    def list_cluster_links(self, cluster_id: str) -> list[dict]:
+        del cluster_id
+        return []
+
+    def list_recent_active_clusters(self, *, since: object) -> list[dict]:
+        del since
+        return []
+
+    def insert_cluster_link(self, **kwargs: object) -> str | None:
+        del kwargs
+        return None
+
     def upsert_cluster(self, cluster: Cluster, *, first_seen: datetime | None = None) -> None:
         self.upserts.append((cluster, first_seen))
 
@@ -148,7 +160,14 @@ class _Hypothesizer:
     def __init__(self) -> None:
         self.calls: list[str | None] = []
 
-    def hypothesize(self, cluster: Cluster, *, current_prompt: str | None = None) -> RootCauseHypothesis:
+    def hypothesize(
+        self,
+        cluster: Cluster,
+        *,
+        current_prompt: str | None = None,
+        linked_summaries: list[str] | None = None,
+    ) -> RootCauseHypothesis:
+        del linked_summaries
         del cluster
         self.calls.append(current_prompt)
         return _HYPOTHESIS
@@ -340,6 +359,7 @@ def test_full_pass_emits_each_stage_with_cluster_attributes(
         "nengok.cycle",
         "observer",
         "diagnoser",
+        "linker",
         "fixer",
         "verifier",
     ]
