@@ -6,6 +6,7 @@ import { fetchArtifacts } from "../api/artifacts";
 import { apiClient } from "../api/client";
 import { submitApproval } from "../api/approvals";
 import { ApprovalHistory } from "../components/clusters/ApprovalHistory";
+import { LinkedClusters } from "../components/clusters/LinkedClusters";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { StatusBadge } from "../components/StatusBadge";
@@ -137,6 +138,8 @@ export function ClusterDetailPage() {
             {artifacts.data?.rca ?? "No RCA artifact yet."}
           </pre>
         </Card>
+
+        <LinkedClusters clusterId={clusterId} />
 
         <div className="space-y-3">
           <h2 className="section-label">Prompt diff</h2>

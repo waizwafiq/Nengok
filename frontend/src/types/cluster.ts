@@ -15,6 +15,17 @@ export interface RootCauseHypothesis {
   implicated_tools: string[];
 }
 
+export interface ClusterLink {
+  link_id: string;
+  linked_cluster_id: string;
+  linked_name: string;
+  linked_project: string | null;
+  linked_status: ClusterStatus;
+  confidence: number;
+  rationale: string | null;
+  created_at: string;
+}
+
 export interface Cluster {
   cluster_id: string;
   name: string;
