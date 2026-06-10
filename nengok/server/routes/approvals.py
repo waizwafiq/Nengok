@@ -21,6 +21,7 @@ router = APIRouter(tags=["approvals"])
 
 ApprovalDecision = Literal["approved", "rejected", "dismissed", "escalated"]
 ApprovalSource = Literal["dashboard", "tui", "api"]
+FeedbackTag = Literal["duplicate_cluster", "mixed_root_causes", "not_a_failure"]
 
 
 _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
@@ -28,6 +29,12 @@ _DECISION_TO_STATUS: dict[str, ClusterStatus] = {
     "rejected": ClusterStatus.REJECTED,
     "dismissed": ClusterStatus.DISMISSED,
     "escalated": ClusterStatus.ESCALATED,
+}
+
+_DECISION_TO_FEEDBACK_KIND: dict[str, str] = {
+    "approved": "fix_approved",
+    "rejected": "fix_rejected",
+    "dismissed": "cluster_dismissed",
 }
 
 _VALID_SOURCES: frozenset[str] = frozenset({"dashboard", "tui", "api"})
@@ -47,6 +54,7 @@ class ApprovalCreate(BaseModel):
     reviewer: str | None = None
     reason: str | None = None
     source: ApprovalSource = "dashboard"
+    feedback_tag: FeedbackTag | None = None
 
 
 class LegacyApprovalCreate(BaseModel):
@@ -57,6 +65,7 @@ class LegacyApprovalCreate(BaseModel):
     reviewer: str | None = Field(default=None, alias="decided_by")
     reason: str | None = Field(default=None, alias="notes")
     source: ApprovalSource = "api"
+    feedback_tag: FeedbackTag | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -79,17 +88,27 @@ def _record(
     reviewer: str | None,
     reason: str | None,
     source: str,
+    feedback_tag: str | None = None,
 ) -> dict:
     resolved, reviewer_source = resolve_reviewer(reviewer)
     normalized_source = source if source in _VALID_SOURCES else "dashboard"
+    cleaned_reason = (reason.strip() if reason else None) or None
     approval_id = store.record_approval(
         cluster_id=cluster_id,
         decision=decision,
         reviewer=resolved,
-        reason=(reason.strip() if reason else None) or None,
+        reason=cleaned_reason,
         source=normalized_source,
     )
     store.mark_status(cluster_id, _DECISION_TO_STATUS[decision])
+    _record_feedback(
+        store,
+        cluster_id=cluster_id,
+        decision=decision,
+        reason=cleaned_reason,
+        source=normalized_source,
+        feedback_tag=feedback_tag,
+    )
     return {
         "approval_id": approval_id,
         "cluster_id": cluster_id,
@@ -98,6 +117,34 @@ def _record(
         "reviewer_source": reviewer_source,
         "source": normalized_source,
     }
+
+
+def _record_feedback(
+    store: StoreDep,
+    *,
+    cluster_id: str,
+    decision: str,
+    reason: str | None,
+    source: str,
+    feedback_tag: str | None,
+) -> None:
+    """
+    Bridge the approval into `nengok_cluster_feedback`.
+
+    An explicit tag (duplicate_cluster / mixed_root_causes /
+    not_a_failure) beats the decision-derived kind; an untagged
+    rejection still writes `fix_rejected`. Escalations carry no
+    clustering signal and write nothing.
+    """
+    kind = feedback_tag or _DECISION_TO_FEEDBACK_KIND.get(decision)
+    if kind is None:
+        return
+    store.record_cluster_feedback(
+        cluster_id=cluster_id,
+        kind=kind,
+        detail=reason,
+        source=source,
+    )
 
 
 @router.get("/reviewer")
@@ -134,6 +181,7 @@ def create_cluster_approval(cluster_id: str, body: ApprovalCreate, store: StoreD
         reviewer=body.reviewer,
         reason=body.reason,
         source=body.source,
+        feedback_tag=body.feedback_tag,
     )
 
 
@@ -146,7 +194,42 @@ def create_approval(body: LegacyApprovalCreate, store: StoreDep) -> dict:
         reviewer=body.reviewer,
         reason=body.reason,
         source=body.source,
+        feedback_tag=body.feedback_tag,
     )
+
+
+class MergeWrongCreate(BaseModel):
+    span_ids: list[str] = Field(min_length=1)
+    reason: str | None = None
+    source: ApprovalSource = "dashboard"
+
+
+@router.post("/clusters/{cluster_id}/feedback/merge-wrong")
+def flag_merge_wrong(cluster_id: str, body: MergeWrongCreate, store: StoreDep) -> dict:
+    """
+    Flag a machine merge as wrong and detach the listed span ids.
+
+    The detached spans also leave `nengok_seen_spans`, so the next cycle
+    re-processes them into their own cluster instead of silently
+    re-attaching them here.
+    """
+    if not _cluster_exists(store, cluster_id):
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    detached = store.detach_spans_from_cluster(cluster_id=cluster_id, span_ids=body.span_ids)
+    if detached == 0:
+        raise HTTPException(status_code=400, detail="None of the span ids belong to this cluster")
+    feedback_id = store.record_cluster_feedback(
+        cluster_id=cluster_id,
+        kind="merge_wrong",
+        detail=(body.reason or f"detached {detached} span(s)"),
+        source=body.source,
+    )
+    return {
+        "feedback_id": feedback_id,
+        "cluster_id": cluster_id,
+        "detached_span_ids": body.span_ids,
+        "detached_count": detached,
+    }
 
 
 def _cluster_exists(store: StoreDep, cluster_id: str) -> bool:

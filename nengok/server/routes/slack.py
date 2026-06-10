@@ -203,6 +203,7 @@ def create_slack_router(config: NengokConfig) -> APIRouter:
 
         store.record_approval(cluster_id=cluster_id, decision="approved", reviewer=reviewer, reason=None)
         store.mark_status(cluster_id, ClusterStatus.APPROVED)
+        store.record_cluster_feedback(cluster_id=cluster_id, kind="fix_approved", detail=None, source="api")
         _update_decision(
             client,
             channel_id,
@@ -249,7 +250,35 @@ def create_slack_router(config: NengokConfig) -> APIRouter:
                         },
                         "label": {"type": "plain_text", "text": "Reason"},
                         "optional": callback_id == "nengok_submit_dismissal_reason",
-                    }
+                    },
+                    {
+                        "type": "input",
+                        "block_id": "feedback_tag_block",
+                        "element": {
+                            "type": "static_select",
+                            "action_id": "feedback_tag_select",
+                            "placeholder": {
+                                "type": "plain_text",
+                                "text": "What went wrong with the clustering?",
+                            },
+                            "options": [
+                                {
+                                    "text": {"type": "plain_text", "text": "Duplicate cluster"},
+                                    "value": "duplicate_cluster",
+                                },
+                                {
+                                    "text": {"type": "plain_text", "text": "Mixed root causes"},
+                                    "value": "mixed_root_causes",
+                                },
+                                {
+                                    "text": {"type": "plain_text", "text": "Not a failure"},
+                                    "value": "not_a_failure",
+                                },
+                            ],
+                        },
+                        "label": {"type": "plain_text", "text": "Clustering feedback (optional)"},
+                        "optional": True,
+                    },
                 ],
             },
         )
@@ -322,10 +351,13 @@ def create_slack_router(config: NengokConfig) -> APIRouter:
         message_ts = metadata["message_ts"]
         slack_user_id = metadata["slack_user_id"]
 
-        reason_value = (
-            body["view"]["state"]["values"].get("reason_block", {}).get("reason_input", {}).get("value")
-        )
+        view_values = body["view"]["state"]["values"]
+        reason_value = view_values.get("reason_block", {}).get("reason_input", {}).get("value")
         reason = reason_value.strip() if reason_value else None
+        tag_option = (
+            view_values.get("feedback_tag_block", {}).get("feedback_tag_select", {}).get("selected_option")
+        )
+        feedback_tag = tag_option.get("value") if isinstance(tag_option, dict) else None
 
         if config.notifier_dry_run:
             _update_error(
@@ -367,6 +399,13 @@ def create_slack_router(config: NengokConfig) -> APIRouter:
 
         store.record_approval(cluster_id=cluster_id, decision=decision, reviewer=reviewer, reason=reason)
         store.mark_status(cluster_id, _DECISION_TO_STATUS[decision])
+        default_kind = "fix_rejected" if decision == "rejected" else "cluster_dismissed"
+        store.record_cluster_feedback(
+            cluster_id=cluster_id,
+            kind=feedback_tag or default_kind,
+            detail=reason,
+            source="api",
+        )
         _update_decision(
             client,
             channel_id,
