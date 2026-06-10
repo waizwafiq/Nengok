@@ -22,6 +22,7 @@ from typer.testing import CliRunner
 
 from nengok import init_wizard
 from nengok.cli import app
+from nengok.errors import OptionalDependencyError
 
 
 class _FakeResponse:
@@ -127,6 +128,19 @@ def test_probe_gemini_records_ping_error() -> None:
     result = init_wizard.probe_gemini(api_key="AIzaTEST" + "x" * 24, ping=_rejecting_gemini_ping)
     assert not result.ok
     assert "API_KEY_INVALID" in result.detail
+
+
+def test_probe_gemini_surfaces_install_hint_when_extra_missing() -> None:
+    def _missing_dependency_ping(_key: str) -> None:
+        raise OptionalDependencyError(
+            "google-genai is not installed but is required to validate the API key.",
+            install_hint="pip install nengok[gemini]",
+        )
+
+    result = init_wizard.probe_gemini(api_key="AIzaTEST" + "x" * 24, ping=_missing_dependency_ping)
+    assert not result.ok
+    assert result.fix_hint is not None
+    assert "pip install nengok[gemini]" in result.fix_hint
 
 
 def test_probe_file_write_succeeds_under_tmp(tmp_path: Path) -> None:
