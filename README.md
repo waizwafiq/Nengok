@@ -180,6 +180,61 @@ nengok run
 
 `sample_agent.seed` fires five runs of the Travel Planner with every failure mode injected, then prints the Phoenix project URL. Hand the same project name to `nengok init` and `nengok run` opens with the ADK triage agent, then walks the four-stage loop end to end. Run `nengok dashboard` afterwards to approve the verified fix. That install line is the one the demo recording uses: it skips the optional `clustering` extra on purpose, so every model call in the loop is a Gemini call.
 
+## Notifications
+
+When a fix is ready for review, Nengok can push a notification so you don't have to poll the dashboard. The notifier layer is a generic protocol — Slack ships as the built-in option, but any channel can be wired in.
+
+### Built-in: Slack
+
+```bash
+pip install "nengok[slack]"
+```
+
+```bash
+# .env
+NENGOK_NOTIFIERS=slack
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+NENGOK_SLACK_CHANNEL_ID=C123XXXXXX
+NENGOK_SLACK_DASHBOARD_URL=http://localhost:8765
+```
+
+Your Slack app needs the `chat:write`, `users:read`, and `users:read.email` bot scopes. When the Verifier passes, Nengok posts a message with the cluster name, pass-rate delta, and **Approve / Reject / Dismiss** buttons. The reviewer's real name and email are resolved via `users.info` before the decision is recorded — anonymous approvals are not accepted.
+
+Set `NENGOK_NOTIFIER_DRY_RUN=true` to preview message layout without enabling approval authority. For full setup instructions and a test script, see [`docs/slack-integration-testing.md`](docs/slack-integration-testing.md).
+
+### Plug in your own notifier
+
+Implement the `Notifier` protocol and register it by dotted path:
+
+```python
+# my_pkg/notifier.py
+from nengok.notifiers.protocol import NotifierResult
+from nengok.notifiers.events import FixProposedEvent, EscalationEvent
+
+class PagerDutyNotifier:
+    name = "pagerduty"
+
+    def notify_fix_proposed(self, event: FixProposedEvent) -> NotifierResult:
+        ...  # post to PagerDuty
+        return NotifierResult(success=True)
+
+    def notify_escalation(self, event: EscalationEvent) -> NotifierResult:
+        ...
+        return NotifierResult(success=True)
+```
+
+```toml
+# ~/.nengok/config.toml
+[nengok]
+notifiers = ["pagerduty"]
+
+[nengok.notifier_registry]
+pagerduty = "my_pkg.notifier:PagerDutyNotifier"
+```
+
+Multiple notifiers run side-by-side — a failure in one never affects the others. Deduplication is built in: the same event on the same channel fires at most once per cluster, even across repeated `nengok run` cycles.
+
 ## Plug in Your Own Agent
 
 Nengok loads any class that satisfies the `AgentRunner` protocol: a `name` property and a `run(agent_input: dict, prompt: str) -> dict` method. Drop the class in your own package, then point Nengok at it from `~/.nengok/config.toml`:
