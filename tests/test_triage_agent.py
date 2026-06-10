@@ -11,6 +11,7 @@ and by the live loop.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 from typing import Any
 
@@ -250,10 +251,30 @@ def test_disabled_reason_none_when_runnable(monkeypatch: pytest.MonkeyPatch) -> 
     assert triage_disabled_reason(_config()) is None
 
 
-def test_adk_available_matches_find_spec() -> None:
-    import importlib.util
+def test_adk_available_never_raises() -> None:
+    assert isinstance(adk_available(), bool)
 
-    assert adk_available() == (importlib.util.find_spec("google.adk") is not None)
+
+def test_adk_available_false_when_google_namespace_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(name: str) -> None:
+        raise ModuleNotFoundError("No module named 'google'")
+
+    monkeypatch.setattr("importlib.util.find_spec", _raise)
+
+    assert adk_available() is False
+
+
+def test_adk_available_false_when_mcp_sdk_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_find_spec = importlib.util.find_spec
+
+    def _no_mcp(name: str) -> object | None:
+        if name == "mcp":
+            return None
+        return real_find_spec(name)
+
+    monkeypatch.setattr("importlib.util.find_spec", _no_mcp)
+
+    assert adk_available() is False
 
 
 def test_redact_tool_payload_scrubs_nested_strings() -> None:

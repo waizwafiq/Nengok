@@ -67,8 +67,22 @@ class TriageVerdict(BaseModel):
 
 
 def adk_available() -> bool:
-    """Return True when the optional ``google-adk`` package is importable."""
-    return importlib.util.find_spec("google.adk") is not None
+    """
+    Return True when the triage agent's imports can resolve.
+
+    Checks the mcp SDK alongside google-adk because the ADK keeps it an
+    optional extra and the toolset import fails without it. find_spec
+    raises (rather than returning None) when a parent package like
+    ``google`` is absent entirely, which is the normal state of a
+    minimal install.
+    """
+    for module in ("google.adk", "mcp"):
+        try:
+            if importlib.util.find_spec(module) is None:
+                return False
+        except ModuleNotFoundError:
+            return False
+    return True
 
 
 def triage_disabled_reason(config: NengokConfig) -> str | None:
@@ -189,8 +203,8 @@ def _build_runner(config: NengokConfig) -> Any:
         )
     except ImportError as exc:
         raise OptionalDependencyError(
-            "The ADK triage agent needs the google-adk package. "
-            f"Install it with `{ADK_INSTALL_HINT}` or disable triage with "
+            "The ADK triage agent needs google-adk and the mcp SDK. "
+            f"Install both with `{ADK_INSTALL_HINT}` or disable triage with "
             "`triage_enabled = false` in ~/.nengok/config.toml.",
             install_hint=ADK_INSTALL_HINT,
         ) from exc

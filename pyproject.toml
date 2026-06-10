@@ -78,10 +78,12 @@ tui = [
     "rich>=13.7.0",
 ]
 adk = [
-    # Exact pin: the MCPToolset module path has moved between ADK releases,
+    # Exact pin: the MCP toolset module path has moved between ADK releases,
     # so every import in nengok/agents/triage.py is verified against this
-    # version. Bumping the pin means re-verifying those imports.
-    "google-adk==2.2.0",
+    # version. Bumping the pin means re-verifying those imports. The [mcp]
+    # extra matters: google-adk keeps the mcp python SDK optional, and the
+    # toolset import fails without it.
+    "google-adk[mcp]==2.2.0",
 ]
 dev = [
     "ruff==0.6.9",
