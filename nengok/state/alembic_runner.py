@@ -56,9 +56,12 @@ def build_config(engine: Engine, *, schema: str | None = None) -> Config:
     """Return an Alembic `Config` bound to `engine` for in-process runs."""
     cfg = Config(str(ALEMBIC_INI_PATH))
     cfg.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+    # Alembic's Config is configparser-backed, so a literal `%` in the URL
+    # (e.g. the %40 encoding `@` in Cloud SQL IAM usernames) must be doubled
+    # or configparser rejects it as interpolation syntax.
     cfg.set_main_option(
         "sqlalchemy.url",
-        engine.url.render_as_string(hide_password=False),
+        engine.url.render_as_string(hide_password=False).replace("%", "%%"),
     )
     cfg.attributes["connection"] = engine
     if schema is not None:
