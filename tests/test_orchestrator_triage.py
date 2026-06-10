@@ -185,6 +185,8 @@ def test_triage_off_calls_sampler_without_narrowing(tmp_path: Path, monkeypatch:
         raise AssertionError("run_triage must not be called when triage is disabled")
 
     monkeypatch.setattr(orch_module, "run_triage", _explode)
+    monkeypatch.delenv("NENGOK_PROJECT", raising=False)
+    monkeypatch.delenv("NENGOK_PROJECTS", raising=False)
     config = NengokConfig.load(
         min_cluster_size=1,
         config_path=tmp_path / "missing.toml",
