@@ -107,9 +107,11 @@ class Clusterer:
         Ask Gemini to group anomalous spans into named failure clusters.
 
         The prompt includes each span's id, operation name, trimmed
-        input/output, attributes, and anomaly signals. The model is
-        instructed to return JSON matching ``_GeminiClustererResponse``.
-        Span ids the model omits from every group are silently dropped.
+        input/output, attributes, and anomaly signals. Production calls
+        pass ``response_schema=_GeminiClustererResponse`` so the API
+        enforces JSON shape; Pydantic still validates to catch drift and
+        the call retries once with a stricter reminder on failure. Span
+        ids the model omits from every group are silently dropped.
         """
         redactor = self.redactor or Redactor.from_config(self.config)
         prompt = _build_clusterer_prompt(anomalies, self.config.cluster_trace_char_budget, redactor=redactor)
@@ -118,8 +120,13 @@ class Clusterer:
         try:
             response = _GeminiClustererResponse.model_validate_json(strip_code_fence(raw))
         except ValidationError:
-            logger.exception("Gemini clusterer response failed Pydantic validation")
-            raise
+            logger.warning("Clusterer response failed validation; retrying once")
+            retry_prompt = (
+                prompt + "\n\nReturn ONLY valid JSON matching the schema. "
+                "No prose, no markdown, no code fence."
+            )
+            retry = gemini(retry_prompt)
+            response = _GeminiClustererResponse.model_validate_json(strip_code_fence(retry))
 
         by_span_id = {a.span.span_id: a for a in anomalies}
         groups: list[_RawGroup] = []
@@ -135,10 +142,16 @@ class Clusterer:
         from nengok.utils.genai_client import build_genai_client
 
         client = build_genai_client(self.config, role="Clusterer")
+        from google.genai import types
+
         return call_gemini(
             client,
             model=self.config.diagnoser_model,
             contents=[{"role": "user", "parts": [{"text": prompt}]}],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_GeminiClustererResponse,
+            ),
             env_var_hint="NENGOK_DIAGNOSER_MODEL",
             role_hint="Clusterer",
             retry_policy=RetryPolicy.from_config(self.config),

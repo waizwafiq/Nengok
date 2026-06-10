@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+from pydantic import ValidationError
+
 from nengok.config import NengokConfig
 from nengok.core.diagnoser._text import trim
 from nengok.core.diagnoser.clusterer import (
@@ -138,6 +141,37 @@ def test_prompt_includes_trimmed_trace_bodies(tmp_config: NengokConfig) -> None:
     assert "A" * budget in captured["prompt"]
     assert "A" * (budget + 1) not in captured["prompt"]
     assert "<truncated>" in captured["prompt"]
+
+
+def test_cluster_retries_once_on_invalid_json(tmp_config: NengokConfig) -> None:
+    anomalies = [_anomaly("s1")]
+    responses = iter(
+        [
+            "not json at all",
+            _fake_response([{"name": "late-fix", "description": "d", "member_span_ids": ["s1"]}]),
+        ]
+    )
+    prompts: list[str] = []
+
+    def fake_gemini(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(responses)
+
+    clusters = Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
+
+    assert [c.name for c in clusters] == ["late-fix"]
+    assert len(prompts) == 2
+    assert "ONLY valid JSON" in prompts[1]
+
+
+def test_cluster_raises_when_retry_also_invalid(tmp_config: NengokConfig) -> None:
+    anomalies = [_anomaly("s1")]
+
+    def fake_gemini(_prompt: str) -> str:
+        return "still not json"
+
+    with pytest.raises(ValidationError):
+        Clusterer(config=tmp_config, gemini_call=fake_gemini).cluster(anomalies)
 
 
 def test_cluster_returns_empty_when_no_anomalies(tmp_config: NengokConfig) -> None:
