@@ -368,6 +368,101 @@ class StateStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def record_cluster_feedback(
+        self,
+        *,
+        cluster_id: str,
+        kind: str,
+        detail: str | None,
+        source: str,
+    ) -> str:
+        feedback_id = str(uuid.uuid4())
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO nengok_cluster_feedback
+                  (feedback_id, cluster_id, kind, detail, source, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (feedback_id, cluster_id, kind, detail, source, now),
+            )
+        return feedback_id
+
+    def list_cluster_feedback(self, project: str | None, limit: int = 5) -> list[dict]:
+        """
+        Return the most recent feedback rows for one project, newest first.
+
+        Joins through `nengok_clusters` so the clusterer's few-shot block
+        can name the cluster each correction applies to. A NULL project
+        matches pre-multi-project rows.
+        """
+        sql = """
+            SELECT f.feedback_id, f.cluster_id, f.kind, f.detail, f.source, f.created_at,
+                   c.name AS cluster_name, c.description AS cluster_description,
+                   c.project AS project
+            FROM nengok_cluster_feedback f
+            JOIN nengok_clusters c ON c.cluster_id = f.cluster_id
+        """
+        params: list = []
+        if project is not None:
+            sql += " WHERE c.project = ? OR c.project IS NULL"
+            params.append(project)
+        sql += " ORDER BY f.created_at DESC, f.feedback_id DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_cluster_feedback_between(
+        self, *, since: datetime | None = None, until: datetime | None = None
+    ) -> list[dict]:
+        sql, params = _range_sql(
+            "SELECT feedback_id, cluster_id, kind, detail, source, created_at "
+            "FROM nengok_cluster_feedback",
+            column="created_at",
+            since=since,
+            until=until,
+            order_by="created_at ASC, feedback_id ASC",
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def detach_spans_from_cluster(self, *, cluster_id: str, span_ids: list[str]) -> int:
+        """
+        Undo a wrong machine merge: pull `span_ids` out of the cluster's
+        member list and delete their `nengok_seen_spans` rows so the next
+        cycle re-processes them into their own cluster.
+
+        Returns how many member ids were actually detached.
+        """
+        if not span_ids:
+            return 0
+        wanted = set(span_ids)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT member_spans_json FROM nengok_clusters WHERE cluster_id = ?",
+                (cluster_id,),
+            ).fetchone()
+            if row is None:
+                return 0
+            members: list[str] = json.loads(row["member_spans_json"] or "[]")
+            kept = [m for m in members if m not in wanted]
+            detached = len(members) - len(kept)
+            if detached == 0:
+                return 0
+            now = datetime.now(UTC).isoformat()
+            conn.execute(
+                "UPDATE nengok_clusters SET member_spans_json = ?, updated_at = ? WHERE cluster_id = ?",
+                (json.dumps(kept), now, cluster_id),
+            )
+            conn.executemany(
+                "DELETE FROM nengok_seen_spans WHERE span_id = ?",
+                [(span_id,) for span_id in wanted],
+            )
+        return detached
+
     def list_clusters_between(
         self, *, since: datetime | None = None, until: datetime | None = None
     ) -> list[dict]:

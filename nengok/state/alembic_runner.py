@@ -39,6 +39,7 @@ KNOWN_NENGOK_REVISIONS: frozenset[str] = frozenset(
         "0007_cluster_signals",
         "0008_cluster_project",
         "0009_cluster_links",
+        "0010_cluster_feedback",
     }
 )
 
