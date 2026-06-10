@@ -39,3 +39,24 @@ class EscalationEvent:
     reason: str | None
     dashboard_url: str | None
     event_kind: str = field(default="escalation")
+
+
+@dataclass(frozen=True)
+class ClusterDiscoveredEvent:
+    """
+    Announce a newly discovered cluster.
+
+    No dispatcher fires this yet; the DTO ships now so the wire format
+    carries `linked_cluster` from day one and the notification hook can
+    land later without a format migration. `linked_cluster` names the
+    sibling cluster id when the cross-agent linker confirmed a shared
+    upstream cause.
+    """
+
+    cluster_id: str
+    cluster_name: str
+    status: str
+    project: str | None
+    dashboard_url: str | None
+    linked_cluster: str | None = None
+    event_kind: str = field(default="cluster_discovered")
