@@ -15,7 +15,15 @@ import { PromptDiff } from "../components/clusters/PromptDiff";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Skeleton } from "../components/ui/Skeleton";
-import type { ApprovalDecision } from "../types/approval";
+import { WrongMergePanel } from "../components/clusters/WrongMergePanel";
+import type { ApprovalDecision, FeedbackTag } from "../types/approval";
+
+const FEEDBACK_TAG_OPTIONS: { value: FeedbackTag | ""; label: string }[] = [
+  { value: "", label: "No clustering feedback" },
+  { value: "duplicate_cluster", label: "Duplicate cluster" },
+  { value: "mixed_root_causes", label: "Mixed root causes" },
+  { value: "not_a_failure", label: "Not a failure" },
+];
 
 interface ReviewerIdentity {
   reviewer: string;
@@ -56,6 +64,7 @@ export function ClusterDetailPage() {
   });
 
   const [reason, setReason] = useState("");
+  const [feedbackTag, setFeedbackTag] = useState<FeedbackTag | "">("");
 
   const decide = useMutation({
     mutationFn: (decision: ApprovalDecision) =>
@@ -63,9 +72,11 @@ export function ClusterDetailPage() {
         decision,
         reviewer: reviewer.data?.source === "fallback" ? null : reviewer.data?.reviewer ?? null,
         reason: reason.trim() || null,
+        feedback_tag: feedbackTag || null,
       }),
     onSuccess: () => {
       setReason("");
+      setFeedbackTag("");
       queryClient.invalidateQueries({ queryKey: ["clusters"] });
       queryClient.invalidateQueries({ queryKey: ["approvals", clusterId] });
     },
@@ -172,6 +183,23 @@ export function ClusterDetailPage() {
                 className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
               />
             </div>
+            <div className="space-y-1">
+              <label htmlFor="feedback-tag" className="text-xs font-medium text-foreground">
+                Clustering feedback (optional, shapes the next cycle)
+              </label>
+              <select
+                id="feedback-tag"
+                value={feedbackTag}
+                onChange={(event) => setFeedbackTag(event.target.value as FeedbackTag | "")}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+              >
+                {FEEDBACK_TAG_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 Recording as <span className="font-mono">{reviewer.data?.reviewer ?? "..."}</span>
@@ -211,6 +239,14 @@ export function ClusterDetailPage() {
           <h2 className="section-label">Approval history</h2>
           <ApprovalHistory clusterId={clusterId} />
         </div>
+
+        <WrongMergePanel
+          clusterId={clusterId}
+          memberSpansJson={cluster.data.member_spans_json}
+          onDetached={() => {
+            queryClient.invalidateQueries({ queryKey: ["clusters"] });
+          }}
+        />
       </section>
     </div>
   );

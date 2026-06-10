@@ -89,6 +89,7 @@ describe("ClusterDetailPage", () => {
         decision: "approved",
         reviewer: "alice",
         reason: null,
+        feedback_tag: null,
       });
     });
   });
