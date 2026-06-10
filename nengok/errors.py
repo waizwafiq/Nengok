@@ -93,3 +93,11 @@ class AgentRunnerLoadError(NengokError):
     def __init__(self, message: str, *, project_identifier: str) -> None:
         super().__init__(message)
         self.project_identifier = project_identifier
+
+
+class NotifierLoadError(NengokError):
+    """Raised when a notifier cannot be imported, fails the protocol check, or has a name mismatch."""
+
+    def __init__(self, message: str, *, notifier_name: str) -> None:
+        super().__init__(message)
+        self.notifier_name = notifier_name

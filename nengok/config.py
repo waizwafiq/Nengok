@@ -156,6 +156,17 @@ class NengokConfig:
 
     metrics_enabled: bool = False
 
+    notifiers: list[str] = field(default_factory=list)
+    notifier_registry: dict[str, str] = field(default_factory=dict)
+    notifier_dry_run: bool = False
+    notifier_configs: dict[str, Any] = field(default_factory=dict)
+
+    slack_bot_token: str | None = None
+    slack_signing_secret: str | None = None
+    slack_default_channel_id: str | None = None
+    slack_dashboard_base_url: str | None = None
+    slack_max_summary_chars: int = 600
+
     redaction_enabled: bool = True
     redaction_rules: list[dict[str, str]] = field(default_factory=list)
     redaction_default_rules: list[str] | None = None
@@ -368,6 +379,11 @@ def _read_env() -> dict[str, Any]:
         "NENGOK_METRICS_ENABLED": "metrics_enabled",
         "NENGOK_DATABASE_ALLOW_PLAINTEXT": "database_allow_plaintext",
         "NENGOK_DATABASE_SCHEMA": "database_schema",
+        "NENGOK_NOTIFIER_DRY_RUN": "notifier_dry_run",
+        "SLACK_BOT_TOKEN": "slack_bot_token",
+        "SLACK_SIGNING_SECRET": "slack_signing_secret",
+        "NENGOK_SLACK_CHANNEL_ID": "slack_default_channel_id",
+        "NENGOK_SLACK_DASHBOARD_URL": "slack_dashboard_base_url",
     }
     out: dict[str, Any] = {}
     for env_key, config_key in mapping.items():
@@ -385,12 +401,18 @@ def _read_env() -> dict[str, Any]:
             "metrics_enabled",
             "database_allow_plaintext",
             "triage_enabled",
+            "notifier_dry_run",
         }:
             out[config_key] = _parse_bool(value)
         elif config_key == "dashboard_cors_origins":
             out[config_key] = [item.strip() for item in value.split(",") if item.strip()]
         else:
             out[config_key] = value
+
+    nengok_notifiers = os.environ.get("NENGOK_NOTIFIERS")
+    if nengok_notifiers:
+        out["notifiers"] = [n.strip() for n in nengok_notifiers.split(",") if n.strip()]
+
     return out
 
 

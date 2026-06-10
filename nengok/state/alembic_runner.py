@@ -35,6 +35,7 @@ KNOWN_NENGOK_REVISIONS: frozenset[str] = frozenset(
         "0003_extend_cycle_history",
         "0004_prefix_tables_with_nengok",
         "0005_add_approval_source",
+        "0006_add_nengok_notifications",
     }
 )
 
