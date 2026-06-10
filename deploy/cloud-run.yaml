@@ -10,6 +10,10 @@ spec:
   template:
     metadata:
       annotations:
+        # minScale stays 0 for the normal install path. During the hackathon
+        # judging window, override at deploy time so a cold start does not
+        # read as a dead deploy when a judge clicks the hosted URL:
+        #   gcloud run services update nengok-dashboard --min-instances=1
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "3"
         run.googleapis.com/execution-environment: gen2
@@ -51,6 +55,9 @@ spec:
               value: "https://app.phoenix.arize.com"
             # Route Gemini through Vertex AI using the Cloud Run runtime service
             # account (Application Default Credentials), no API key needed.
+            # The triage agent's gemini-3-flash-preview rides the same backend
+            # and the same aiplatform.user grant as the diagnoser model; no
+            # extra IAM binding is needed for it.
             - name: GOOGLE_GENAI_USE_VERTEXAI
               value: "true"
             - name: GOOGLE_CLOUD_PROJECT
