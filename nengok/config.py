@@ -52,6 +52,7 @@ DEFAULT_VERTEX_LOCATION = "global"
 
 DEFAULT_SPAN_LIMIT = 200
 DEFAULT_MIN_CLUSTER_SIZE = 3
+DEFAULT_CLUSTER_MATCH_THRESHOLD = 0.8
 DEFAULT_REGRESSION_PASS_THRESHOLD = 0.90
 DEFAULT_GOLDEN_REGRESSION_LIMIT = 0.02
 DEFAULT_DRY_RUN_SAMPLES = 3
@@ -110,6 +111,7 @@ class NengokConfig:
 
     span_limit: int = DEFAULT_SPAN_LIMIT
     min_cluster_size: int = DEFAULT_MIN_CLUSTER_SIZE
+    cluster_match_threshold: float = DEFAULT_CLUSTER_MATCH_THRESHOLD
     regression_pass_threshold: float = DEFAULT_REGRESSION_PASS_THRESHOLD
     golden_regression_limit: float = DEFAULT_GOLDEN_REGRESSION_LIMIT
     dry_run_samples: int = DEFAULT_DRY_RUN_SAMPLES
@@ -432,6 +434,7 @@ def _range_checks(cfg: NengokConfig) -> list[tuple[str, float, float, float]]:
     return [
         ("span_limit", cfg.span_limit, 1, 10_000),
         ("min_cluster_size", cfg.min_cluster_size, 1, 1_000),
+        ("cluster_match_threshold", cfg.cluster_match_threshold, 0.0, 1.0),
         ("regression_pass_threshold", cfg.regression_pass_threshold, 0.0, 1.0),
         ("golden_regression_limit", cfg.golden_regression_limit, 0.0, 1.0),
         ("dry_run_samples", cfg.dry_run_samples, 1, 100),
