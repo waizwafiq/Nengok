@@ -37,6 +37,7 @@ KNOWN_NENGOK_REVISIONS: frozenset[str] = frozenset(
         "0005_add_approval_source",
         "0006_add_nengok_notifications",
         "0007_cluster_signals",
+        "0008_cluster_project",
     }
 )
 

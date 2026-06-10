@@ -60,6 +60,7 @@ def cluster_from_row(row: dict) -> Cluster:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         signals=json.loads(signals_json) if signals_json else [],
+        project=row.get("project"),
     )
 
 
@@ -161,8 +162,8 @@ class StateStore:
                 """
                 INSERT INTO nengok_clusters
                   (cluster_id, name, description, status, hypothesis_json, member_spans_json,
-                   created_at, updated_at, first_seen, diagnosed_at, signals_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   created_at, updated_at, first_seen, diagnosed_at, signals_json, project)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cluster_id) DO UPDATE SET
                     name = excluded.name,
                     description = excluded.description,
@@ -172,7 +173,8 @@ class StateStore:
                     updated_at = excluded.updated_at,
                     first_seen = COALESCE(nengok_clusters.first_seen, excluded.first_seen),
                     diagnosed_at = COALESCE(nengok_clusters.diagnosed_at, excluded.diagnosed_at),
-                    signals_json = excluded.signals_json
+                    signals_json = excluded.signals_json,
+                    project = COALESCE(excluded.project, nengok_clusters.project)
                 """,
                 (
                     cluster.cluster_id,
@@ -186,6 +188,7 @@ class StateStore:
                     first_seen_iso,
                     diagnosed_at_iso,
                     json.dumps(cluster.signals),
+                    cluster.project,
                 ),
             )
 
@@ -217,16 +220,22 @@ class StateStore:
                     (status.value, now, cluster_id),
                 )
 
-    def list_clusters(self, *, status: ClusterStatus | None = None) -> list[dict]:
+    def list_clusters(self, *, status: ClusterStatus | None = None, project: str | None = None) -> list[dict]:
         query = "SELECT * FROM nengok_clusters"
-        params: tuple = ()
+        clauses: list[str] = []
+        params: list = []
         if status is not None:
-            query += " WHERE status = ?"
-            params = (status.value,)
+            clauses.append("status = ?")
+            params.append(status.value)
+        if project is not None:
+            clauses.append("project = ?")
+            params.append(project)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY updated_at DESC"
 
         with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query, tuple(params)).fetchall()
         return [dict(row) for row in rows]
 
     def record_approval(
@@ -383,17 +392,19 @@ class StateStore:
                 """
                 INSERT INTO nengok_cycles
                   (cycle_id, started_at, ended_at, status,
-                   clusters_processed, clusters_discovered,
-                   gemini_tokens, gemini_dollars, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   clusters_processed, clusters_discovered, clusters_merged,
+                   gemini_tokens, gemini_dollars, error_message, projects_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cycle_id) DO UPDATE SET
                     ended_at = excluded.ended_at,
                     status = excluded.status,
                     clusters_processed = excluded.clusters_processed,
                     clusters_discovered = excluded.clusters_discovered,
+                    clusters_merged = excluded.clusters_merged,
                     gemini_tokens = excluded.gemini_tokens,
                     gemini_dollars = excluded.gemini_dollars,
-                    error_message = excluded.error_message
+                    error_message = excluded.error_message,
+                    projects_json = excluded.projects_json
                 """,
                 (
                     record.cycle_id,
@@ -402,9 +413,11 @@ class StateStore:
                     record.status.value,
                     record.clusters_processed,
                     record.clusters_discovered,
+                    record.clusters_merged,
                     record.gemini_tokens,
                     record.gemini_dollars,
                     record.error_message,
+                    json.dumps(record.projects),
                 ),
             )
 
