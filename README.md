@@ -53,7 +53,9 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 - **Plug-and-play with Phoenix.** Works with Phoenix Cloud, self-hosted Phoenix, or `phoenix serve` running on your laptop.
 - **ADK triage gate.** An `LlmAgent` armed with Phoenix MCP tools inspects recent traffic at the head of every cycle and decides whether the full pipeline is worth waking. If the agent errors, the cycle falls back to the rule-based anomaly filter; pass `--no-triage` to skip the gate entirely.
 - **Two-stage failure filtering.** Anomaly query at the SDK layer, then deduplication against previously-seen span IDs. You never re-process healthy traffic.
-- **Two-pass clustering** *(stretch)*. HDBSCAN on trace embeddings, then Gemini sub-clusters by hypothesized root cause so "same symptom, different cause" failures get separated.
+- **Clusters with a memory.** A recurring failure mode lands in its existing cluster row instead of minting a new one per cycle. An approved fix that regresses escalates the cluster and fires a notification; rejected and dismissed clusters re-accrete silently instead of re-alerting.
+- **More than one agent per install.** List several Phoenix projects in `project_identifiers` and a single cycle observes them all. When two agents fail for the same upstream reason, the cross-agent linker confirms the pair and both cluster pages show an "Also affects" panel.
+- **Reviewer feedback becomes signal.** Reject and dismiss decisions (optionally tagged `duplicate_cluster`, `mixed_root_causes`, or `not_a_failure`) replay into the next cycle's clusterer prompt, and `nengok improve` reads the last 30 days of outcomes to propose a clustering prompt amendment that only a human can activate.
 - **Code-first, LLM-second evaluators.** Structural checks are programmatic; only subjective dimensions (coherence, intent match) reach an LLM-as-Judge. Mitigates the well-documented position/verbosity bias of LLM judges.
 - **A/B experiments via Phoenix.** Baseline vs. fix prompt, full per-case breakdown, dry-run safeguard.
 - **Human approval gate.** Every fix lands in `artifacts/` and waits for a one-click approve / reject / dismiss in the local dashboard.
@@ -94,7 +96,7 @@ export PHOENIX_API_KEY=...        # if your Phoenix requires auth
 export GOOGLE_API_KEY=...
 ```
 
-`nengok init` writes `~/.nengok/config.toml`. Secrets stay in your environment.
+`nengok init` writes `~/.nengok/config.toml`. Secrets stay in your environment. Every config field is documented with its env var and default in [docs/configuration.md](docs/configuration.md).
 
 ### 3. Run a cycle
 
@@ -165,7 +167,7 @@ The `sample_agent/` package ships a Travel Planner with three runtime-toggleable
 | `weather` | Temperature unit silently switches from F to C | Agent suggests a parka for 75 °F weather |
 | `hotels` | Endpoint times out 40 % of the time | Agent hallucinates hotel names instead of erroring |
 
-A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retrieval-augmented Q&A with three injectable failure modes: `retriever` drops the retrieved context, `hallucination` patches the prompt to answer from memory, and `wrong_attribution` rotates snippet ids so the citation no longer matches its body. Nengok can point at it without code changes.
+A second sample agent lives under `sample_agent/qa_agent/`. It is a tiny retrieval-augmented Q&A with four injectable failure modes: `retriever` drops the retrieved context, `hallucination` patches the prompt to answer from memory, `wrong_attribution` rotates snippet ids so the citation no longer matches its body, and `flights_schema` rides the same mock flights API as the Travel Planner so the cross-agent linker has a shared upstream failure to find. Nengok can point at it without code changes.
 
 Run the demo with one copy-paste:
 
@@ -253,22 +255,21 @@ These are non-negotiable for every contribution. See [`.github/CONTRIBUTING.md`]
 
 ## Roadmap
 
-- **v0.1 (current):** Closed-loop Observer -> Diagnoser -> Fixer -> Verifier with local artifacts and approval UI.
-- **v0.2:** Git MCP integration. Approved artifacts open as PRs automatically.
-- **v0.3:** Multi-agent monitoring, event-driven heartbeat, cluster state persistence across cycles.
-- **v0.4:** Managed cloud tier (open-core, following the Langfuse playbook). The self-hosted SDK stays the source of truth.
+- **v0.1 (current):** the closed loop end to end. ADK triage gate, Observer -> Diagnoser -> Fixer -> Verifier, cluster identity across cycles, monitoring for several agents at once with cross-agent cluster links, reviewer feedback feeding the clusterer, `nengok improve` retros, local artifacts, and approval from the browser dashboard or the `nengok review` TUI.
+- **v0.2:** `TraceBackend` abstraction so Langfuse and raw OTLP can stand in for Phoenix; optional HDBSCAN embedding pre-pass in front of the Gemini clusterer.
+- **v0.3:** Git MCP integration (approved artifacts open as PRs), event-driven cycle scheduling with a heartbeat threshold.
+- **v0.4:** Plugin architecture for fix strategies, write-back targets, and evaluators; DSPy GEPA and TextGrad fix-generation backends; managed cloud tier (open-core, following the Langfuse playbook). The self-hosted SDK stays the source of truth.
+- **v1.0:** EU AI Act audit bundle built on the `nengok export` format.
 
 ### Out of scope for v0.1
 
 The v0.1 hackathon release intentionally defers:
 
-- Git MCP integration. Approved fixes write to `artifacts/`; opening them as PRs lands in v0.2.
-- Event-driven heartbeat cycle. The current loop polls on a fixed 5-minute interval. Event-driven scheduling lands in v0.3.
-- Span deduplication across cycles. The demo uses controlled traffic so re-ingest is not a problem.
-- Cluster lifecycle persistence across cycles. The loop runs once per demo; persistence lands in v0.3.
-- Real-time executive dashboard with historical trends. The pitch video uses a static mockup.
-- HDBSCAN clustering pipeline. v0.1 ships Gemini-only clustering; HDBSCAN is a stretch goal.
-- Multi-agent monitoring. v0.1 watches a single Travel Planner; multi-agent monitoring lands in v0.3.
+- Git MCP integration. Approved fixes write to `artifacts/`; opening them as PRs lands in v0.3.
+- A `TraceBackend` abstraction. v0.1 is Phoenix-native; Langfuse and raw OTLP support land in v0.2.
+- Event-driven cycle scheduling. The current loop polls on a fixed interval; the heartbeat threshold lands in v0.3.
+- HDBSCAN clustering. v0.1 ships the Gemini-only clusterer, with cluster identity and reviewer feedback layered on top. The `clustering` extra exists in `pyproject.toml` but nothing imports it yet.
+- Plugin architecture and the DSPy / TextGrad fix backends (v0.4).
 
 ## Acknowledgements
 
