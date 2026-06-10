@@ -30,6 +30,16 @@ export interface RecentCycle {
 
 export type RecentCycleStatusCounts = Partial<Record<CycleStatus, number>>;
 
+export interface DuplicateRatePoint {
+  day: string;
+  rate: number;
+}
+
+export interface ClusteringQuality {
+  duplicate_rate_trend: DuplicateRatePoint[];
+  latest_golden_f1: number | null;
+}
+
 export interface DashboardOverview {
   cluster_counts: ClusterCounts;
   mttd_seconds: number | null;
@@ -42,4 +52,5 @@ export interface DashboardOverview {
   gemini_spend_sparkline_30d?: GeminiSpendPoint[];
   recent_cycles?: RecentCycle[];
   recent_cycle_status_counts?: RecentCycleStatusCounts;
+  clustering_quality?: ClusteringQuality;
 }
