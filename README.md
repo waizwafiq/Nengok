@@ -70,7 +70,7 @@ Each cycle takes minutes instead of hours, every fix becomes a permanent regress
 - FastAPI bundled inside the SDK to serve the dashboard API.
 - Vite, React, TypeScript, and Tailwind for the frontend.
 - SQLite (default) or any Postgres / MySQL via `DATABASE_URL`, served through `nengok/state/store.py`.
-- `pip install nengok` for local use; Cloud Run for the hackathon hosted URL.
+- `pip install nengok` for local use; the hosted demo dashboard runs on Cloud Run at [nengok-dashboard-863822470060.asia-southeast1.run.app](https://nengok-dashboard-863822470060.asia-southeast1.run.app).
 
 ## Quickstart
 
