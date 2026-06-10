@@ -1,0 +1,276 @@
+{
+  "version": 1,
+  "description": "Hand-labeled anomalous spans for scoring the clusterer. Thirty spans cover the three travel-planner failure modes (flights schema drift, weather unit mismatch, hotels timeout) and two qa-agent modes (empty retrieval context, wrong snippet attribution). Each span carries the expected_cluster label a correct clusterer should assign. Built from seeded runs of both sample agents; every label hand-verified.",
+  "spans": [
+    {
+      "span_id": "g-flights-01",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Plan a 3-day trip from KUL to NRT in July.",
+      "output": "Flight MH88 departs at {'hour': 14, 'minute': 30} which I could not format into the itinerary.",
+      "signals": ["missing_output_field"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-flights-02",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Find me the cheapest flight from KUL to SIN tomorrow morning.",
+      "output": "The flights tool returned departure_time as an object instead of a string, so the departure column is blank.",
+      "signals": ["missing_output_field", "tool_failure"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-flights-03",
+      "project": "travel-planner-agent",
+      "operation": "tool.flights.search",
+      "input": "{\"origin\": \"KUL\", \"destination\": \"HND\"}",
+      "output": "[{\"flight_no\": \"MH88\", \"departure_time\": {\"hour\": 14, \"minute\": 30}, \"price_usd\": 612.0}]",
+      "signals": ["error_status"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-flights-04",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Book me a morning departure to Tokyo next Friday.",
+      "output": "Itinerary draft failed: departure_time payload was a dict, expected HH:MM string per the prompt contract.",
+      "signals": ["error_status"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-flights-05",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Plan a weekend in Osaka, flights and hotel included.",
+      "output": "Departure time shows as raw JSON {'hour': 9, 'minute': 15} in the flights section of the plan.",
+      "signals": ["missing_output_field"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-flights-06",
+      "project": "travel-planner-agent",
+      "operation": "tool.flights.search",
+      "input": "{\"origin\": \"PEN\", \"destination\": \"BKK\"}",
+      "output": "[{\"flight_no\": \"AK702\", \"departure_time\": {\"hour\": 7, \"minute\": 5}, \"price_usd\": 98.0}]",
+      "signals": ["error_status", "tool_failure"],
+      "expected_cluster": "flights-schema-drift"
+    },
+    {
+      "span_id": "g-weather-01",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "What should I pack for Reykjavik in January?",
+      "output": "Expect a pleasant 35 degrees, so pack light summer clothing for your Reykjavik trip.",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-weather-02",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Plan outdoor activities in Helsinki this December.",
+      "output": "With temperatures around 28 degrees it is perfect beach weather in Helsinki this December.",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-weather-03",
+      "project": "travel-planner-agent",
+      "operation": "tool.weather.lookup",
+      "input": "{\"city\": \"Oslo\", \"month\": \"February\"}",
+      "output": "{\"temperature\": 20, \"unit_assumed_by_agent\": \"celsius\", \"actual_unit\": \"fahrenheit\"}",
+      "signals": ["low_eval_score", "tool_failure"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-weather-04",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Is Kuala Lumpur hot in March? Plan accordingly.",
+      "output": "Kuala Lumpur sits at a chilly 90 degrees Celsius in March, so bring a heavy winter coat.",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-weather-05",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Suggest a picnic day in Chicago this November.",
+      "output": "At 40 degrees it will be warm; the agent recommended shorts for a November picnic in Chicago.",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-weather-06",
+      "project": "travel-planner-agent",
+      "operation": "tool.weather.lookup",
+      "input": "{\"city\": \"Sapporo\", \"month\": \"January\"}",
+      "output": "{\"temperature\": 25, \"rendered_as\": \"25C mild\", \"expected\": \"25F freezing\"}",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "weather-unit-mismatch"
+    },
+    {
+      "span_id": "g-hotels-01",
+      "project": "travel-planner-agent",
+      "operation": "tool.hotels.search",
+      "input": "{\"city\": \"Tokyo\", \"nights\": 3}",
+      "output": "TimeoutError: hotels API did not respond within 10s",
+      "signals": ["high_latency", "tool_failure"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-hotels-02",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Plan a 5-night stay in Bangkok with a hotel under $80.",
+      "output": "I had trouble reaching the hotels service, so here are some hotels I believe exist: The Grand Riverside Palace.",
+      "signals": ["high_latency", "low_eval_score"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-hotels-03",
+      "project": "travel-planner-agent",
+      "operation": "tool.hotels.search",
+      "input": "{\"city\": \"Seoul\", \"nights\": 2}",
+      "output": "TimeoutError: upstream socket read exceeded deadline after 10s",
+      "signals": ["high_latency", "error_status"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-hotels-04",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Where should I stay near Shibuya for two nights?",
+      "output": "The hotel search hung, so the itinerary invents a plausible-sounding hotel rather than admitting the failure.",
+      "signals": ["high_latency", "low_eval_score"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-hotels-05",
+      "project": "travel-planner-agent",
+      "operation": "tool.hotels.search",
+      "input": "{\"city\": \"Hanoi\", \"nights\": 4}",
+      "output": "TimeoutError: hotels API gave no response; agent continued without flagging it",
+      "signals": ["high_latency", "tool_failure"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-hotels-06",
+      "project": "travel-planner-agent",
+      "operation": "agent.plan_trip",
+      "input": "Find a quiet hotel in Kyoto for three nights in May.",
+      "output": "After a 12 second stall the plan lists 'a charming ryokan downtown' with no name, price, or booking link.",
+      "signals": ["high_latency"],
+      "expected_cluster": "hotels-timeout"
+    },
+    {
+      "span_id": "g-qa-retriever-01",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "What is Nengok?",
+      "output": "Nengok is a Japanese accounting standard from 1987 used by regional banks. [no snippets were retrieved]",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-retriever-02",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "How does Nengok handle human approval?",
+      "output": "Answer produced with zero retrieved snippets; the model guessed from memory instead of refusing.",
+      "signals": ["low_eval_score", "missing_output_field"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-retriever-03",
+      "project": "qa-agent",
+      "operation": "qa.retrieve",
+      "input": "Which observability platform does Nengok rely on?",
+      "output": "[] (retriever returned no snippets but the pipeline continued)",
+      "signals": ["missing_output_field", "tool_failure"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-retriever-04",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "Where do Nengok artifacts get written?",
+      "output": "They are uploaded to a managed cloud bucket. [fabricated; context was empty and the prompt says refuse]",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-retriever-05",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "What does OpenInference provide?",
+      "output": "Confidently describes a fictional 'OpenInference certification program'; snippet list was empty.",
+      "signals": ["low_eval_score", "missing_output_field"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-retriever-06",
+      "project": "qa-agent",
+      "operation": "qa.retrieve",
+      "input": "How does Nengok pick between code evaluators and judges?",
+      "output": "[] (no snippets matched; downstream answer cited 'internal training data')",
+      "signals": ["tool_failure"],
+      "expected_cluster": "qa-empty-retrieval-context"
+    },
+    {
+      "span_id": "g-qa-attrib-01",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "What is Arize Phoenix?",
+      "output": "Phoenix is an open-source LLM observability platform [cited: gemini-overview, which actually describes Gemini].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    },
+    {
+      "span_id": "g-qa-attrib-02",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "Does Nengok auto-apply fixes?",
+      "output": "No, fixes wait for human approval [cited: data-egress, but the claim comes from human-in-the-loop].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    },
+    {
+      "span_id": "g-qa-attrib-03",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "Where does trace data live when using Nengok?",
+      "output": "On the user's own infrastructure [cited: evaluator-policy, an unrelated snippet about judges].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    },
+    {
+      "span_id": "g-qa-attrib-04",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "What instrumentation standard does Nengok build on?",
+      "output": "OpenInference [cited: phoenix-overview; the snippet ids were rotated one position].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    },
+    {
+      "span_id": "g-qa-attrib-05",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "Which model family powers Nengok's reasoning?",
+      "output": "Gemini [cited: nengok-overview instead of gemini-overview; citation label points at the wrong body].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    },
+    {
+      "span_id": "g-qa-attrib-06",
+      "project": "qa-agent",
+      "operation": "qa.answer",
+      "input": "Who approves a proposed prompt fix?",
+      "output": "A human reviewer [cited: openinference-overview, which says nothing about approvals].",
+      "signals": ["low_eval_score"],
+      "expected_cluster": "qa-wrong-snippet-attribution"
+    }
+  ]
+}
