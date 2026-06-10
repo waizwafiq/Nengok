@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
+import httpx
+
 from nengok.config import NengokConfig
 from nengok.core.evaluators.aggregate import summarize_experiment
 from nengok.core.evaluators.code_evals import CodeEvaluator
@@ -31,6 +33,8 @@ from nengok.errors import (
     AgentRunnerLoadError,
     GoldenDatasetError,
     OptionalDependencyError,
+    PhoenixConnectionError,
+    PhoenixProjectNotFoundError,
     PhoenixTimeoutError,
 )
 from nengok.phoenix.spans import normalize_span
@@ -124,13 +128,29 @@ class PhoenixWrapper:
         narrow a cycle to the verdict's lookback.
         """
         client = self._get_client()
-        raw = self._call_with_timeout(
-            lambda: client.spans.get_spans(
-                project_identifier=project_identifier, limit=limit, start_time=start_time
-            ),
-            method="spans.get_spans",
-            timeout_seconds=self._config.phoenix_read_timeout_seconds,
-        )
+        try:
+            raw = self._call_with_timeout(
+                lambda: client.spans.get_spans(
+                    project_identifier=project_identifier, limit=limit, start_time=start_time
+                ),
+                method="spans.get_spans",
+                timeout_seconds=self._config.phoenix_read_timeout_seconds,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise PhoenixProjectNotFoundError(
+                    f"Phoenix has no project named '{project_identifier}'. "
+                    "Run `python -m sample_agent.seed --count 5` to create it, "
+                    "or update `phoenix_project_name` in ~/.nengok/config.toml.",
+                    project_identifier=project_identifier,
+                ) from exc
+            raise
+        except httpx.TransportError as exc:
+            raise PhoenixConnectionError(
+                f"Phoenix at {self._config.phoenix_base_url} did not answer "
+                f"spans.get_spans ({exc.__class__.__name__}: {exc}). "
+                "Check that Phoenix is running and `phoenix_base_url` is right."
+            ) from exc
         spans = [normalize_span(item) for item in raw]
         if with_annotations:
             self._merge_span_annotations(client, project_identifier, spans)
