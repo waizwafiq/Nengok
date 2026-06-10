@@ -103,8 +103,10 @@ class NengokConfig:
     vertex_location: str = DEFAULT_VERTEX_LOCATION
 
     project_identifier: str = "default"
+    project_identifiers: list[str] = field(default_factory=list)
     agent_runner: str | None = None
     agent_runner_kwargs: dict[str, Any] = field(default_factory=dict)
+    agent_runners: dict[str, str] = field(default_factory=dict)
 
     diagnoser_model: str = DIAGNOSER_MODEL
     judge_model: str = JUDGE_MODEL
@@ -248,6 +250,25 @@ class NengokConfig:
                 "Set it via --project, NENGOK_PROJECT, or the config file."
             )
 
+        if any(not entry or not entry.strip() for entry in self.project_identifiers):
+            raise ConfigError(
+                "project_identifiers contains an empty entry. "
+                "Remove it from NENGOK_PROJECTS or the config file."
+            )
+        if len(set(self.project_identifiers)) != len(self.project_identifiers):
+            duplicates = sorted(
+                {p for p in self.project_identifiers if self.project_identifiers.count(p) > 1}
+            )
+            raise ConfigError(
+                f"project_identifiers contains duplicates: {', '.join(duplicates)}. "
+                "Each monitored project may appear only once."
+            )
+
+        for mapped_project, runner_spec in self.agent_runners.items():
+            if not mapped_project:
+                raise ConfigError("agent_runners contains an empty project key.")
+            _validate_runner_spec(runner_spec, field_name=f"agent_runners['{mapped_project}']")
+
         if self.project_identifier == SAMPLE_AGENT_PROJECT_NAME:
             logger.warning(
                 "project_identifier is set to the bundled sample agent project "
@@ -273,23 +294,38 @@ class NengokConfig:
 
         agent_runner = getattr(self, "agent_runner", None)
         if agent_runner:
-            if ":" not in agent_runner or agent_runner.count(":") != 1:
-                raise ConfigError(
-                    f"agent_runner '{agent_runner}' is malformed. "
-                    "Expected `module.path:ClassName` (e.g. "
-                    "`nengok.runners.sample_agent_runner:SampleAgentRunner`)."
-                )
-            module_part, class_part = agent_runner.split(":", 1)
-            if not module_part or not class_part:
-                raise ConfigError(
-                    f"agent_runner '{agent_runner}' is malformed. " "Expected `module.path:ClassName`."
-                )
+            _validate_runner_spec(agent_runner, field_name="agent_runner")
 
         for name, value, lo, hi in _range_checks(self):
             if not lo <= value <= hi:
                 raise ConfigError(
                     f"{name}={value} is out of range. " f"Expected a value between {lo} and {hi}."
                 )
+
+    def resolved_project_identifiers(self) -> list[str]:
+        """
+        Return every project the orchestrator should cover this cycle.
+
+        An empty `project_identifiers` means single-project mode, so
+        existing installs keep monitoring `project_identifier` unchanged.
+        """
+        return list(self.project_identifiers) or [self.project_identifier]
+
+    def runner_spec_for(self, project: str) -> str | None:
+        """Return the dotted runner spec for `project`, falling back to `agent_runner`."""
+        return self.agent_runners.get(project) or self.agent_runner
+
+
+def _validate_runner_spec(spec: str, *, field_name: str) -> None:
+    if ":" not in spec or spec.count(":") != 1:
+        raise ConfigError(
+            f"{field_name} '{spec}' is malformed. "
+            "Expected `module.path:ClassName` (e.g. "
+            "`nengok.runners.sample_agent_runner:SampleAgentRunner`)."
+        )
+    module_part, class_part = spec.split(":", 1)
+    if not module_part or not class_part:
+        raise ConfigError(f"{field_name} '{spec}' is malformed. Expected `module.path:ClassName`.")
 
 
 def _validate_database_url(url: str) -> None:
@@ -414,6 +450,10 @@ def _read_env() -> dict[str, Any]:
     nengok_notifiers = os.environ.get("NENGOK_NOTIFIERS")
     if nengok_notifiers:
         out["notifiers"] = [n.strip() for n in nengok_notifiers.split(",") if n.strip()]
+
+    nengok_projects = os.environ.get("NENGOK_PROJECTS")
+    if nengok_projects:
+        out["project_identifiers"] = [p.strip() for p in nengok_projects.split(",") if p.strip()]
 
     return out
 
