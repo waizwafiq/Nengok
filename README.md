@@ -2,7 +2,7 @@
 
 > Phoenix shows you what's wrong. **Nengok fixes it.**
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.1.0-blue)](https://pypi.org/project/nengok/)
+[![PyPI](https://img.shields.io/badge/pypi-v0.1.1-blue)](https://pypi.org/project/nengok/)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![Built on](https://img.shields.io/badge/built%20on-Arize%20Phoenix-orange)](https://github.com/Arize-ai/phoenix)

@@ -2,6 +2,17 @@
 
 Notable changes to Nengok, newest first. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions with [SemVer](https://semver.org/). The `github-release` job in [.github/workflows/publish.yml](.github/workflows/publish.yml) quotes the matching section of this file into the GitHub Release draft on every tag push, so keep section headers in the `## [x.y.z] - YYYY-MM-DD` shape.
 
+## [0.1.1] - 2026-06-11
+
+### Fixed
+
+- Alembic config rejected any `DATABASE_URL` containing a literal percent sign, such as the `%40` that encodes `@` in Cloud SQL IAM usernames. The URL is now escaped before it reaches configparser.
+
+### Added
+
+- `deploy/cloudbuild.yaml` for one-command Cloud Run image builds, and a `.gcloudignore` that keeps secrets and local state out of build uploads.
+- Slack setup and testing guide at `docs/slack-integration-testing.md`.
+
 ## [0.1.0] - 2026-06-10
 
 First public release.
@@ -20,4 +31,5 @@ First public release.
 - Resilience controls: Gemini retry with exponential backoff, per-call timeouts, a per-cycle token budget with incident artifacts, and structured JSON logging.
 - Cloud Run deployment path with Vertex AI, Secret Manager, and Managed Prometheus integrations.
 
+[0.1.1]: https://github.com/waizwafiq/Nengok/releases/tag/v0.1.1
 [0.1.0]: https://github.com/waizwafiq/Nengok/releases/tag/v0.1.0
