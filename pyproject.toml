@@ -77,6 +77,12 @@ tui = [
     "textual>=0.85.0,<1.0",
     "rich>=13.7.0",
 ]
+adk = [
+    # Exact pin: the MCPToolset module path has moved between ADK releases,
+    # so every import in nengok/agents/triage.py is verified against this
+    # version. Bumping the pin means re-verifying those imports.
+    "google-adk==2.2.0",
+]
 dev = [
     "ruff==0.6.9",
     "mypy>=1.11.0",
