@@ -3,3 +3,7 @@
 .git
 #!include:.gitignore
 .claude/
+# Demo data baked into the hosted image: the *.db rule above would drop the
+# state file, and artifacts/*/ would drop the fix bundle the dashboard serves.
+!deploy/demo_state.db
+!artifacts/*/

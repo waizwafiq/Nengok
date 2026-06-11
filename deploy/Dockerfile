@@ -27,6 +27,14 @@ COPY pyproject.toml README.md hatch_build.py ./
 COPY nengok/ ./nengok/
 COPY sample_agent/ ./sample_agent/
 
+# Demo data for the hackathon hosted URL: a state.db from a real completed
+# cycle plus its fix artifacts. Shipping an already-migrated database also
+# makes the startup migration a no-op, so concurrent first requests cannot
+# race it. NENGOK_STATE_DB below points the dashboard at this copy.
+COPY deploy/demo_state.db /app/demo_state.db
+COPY artifacts/ /app/artifacts/
+ENV NENGOK_STATE_DB=/app/demo_state.db
+
 COPY --from=frontend /frontend/dist ./nengok/server/static
 
 ENV NENGOK_SKIP_FRONTEND_BUILD=1
