@@ -21,8 +21,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
-from pydantic import ValidationError
-
 from nengok.agents.triage import TriageVerdict, run_triage, triage_disabled_reason
 from nengok.config import NengokConfig
 from nengok.core.cost import CostTracker
@@ -52,19 +50,15 @@ from nengok.core.verifier.artifact_writer import ArtifactWriter
 from nengok.core.verifier.gate import VerifierGate
 from nengok.errors import (
     NotifierLoadError,
-    OptionalDependencyError,
     PhoenixTimeoutError,
-    TriageError,
 )
 from nengok.notifiers.dispatcher import NotifierDispatcher
 from nengok.notifiers.events import EscalationEvent, ExperimentSummary, FixProposedEvent
 from nengok.phoenix.client import PhoenixWrapper
-from nengok.phoenix.mcp import MCPError
 from nengok.runners.agent_runner import register_runner
 from nengok.runners.loader import load_runner
 from nengok.server import metrics
 from nengok.state.store import StateStore, cluster_from_row
-from nengok.utils.gemini import GeminiCallError
 from nengok.utils.logging import get_logger, run_context
 from nengok.utils.tracing import get_tracer, register_meta_tracer, set_attributes
 
@@ -603,14 +597,11 @@ class Orchestrator:
             triage_path = "adk"
             try:
                 verdict = run_triage(self.config)
-            except (
-                ValidationError,
-                TimeoutError,
-                MCPError,
-                GeminiCallError,
-                OptionalDependencyError,
-                TriageError,
-            ) as exc:
+            # Broad on purpose: the gate's contract is fail-open on any agent
+            # failure, and ADK raises library-internal wrappers (for example
+            # google.adk.models.google_llm._ResourceExhaustedError) that
+            # cannot be imported here while the adk extra stays optional.
+            except Exception as exc:
                 triage_path = "fallback"
                 metrics.triage_errors_total.labels(error_class=type(exc).__name__).inc()
                 logger.warning(
