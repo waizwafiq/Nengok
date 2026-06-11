@@ -69,7 +69,7 @@ function NavGroup({
     <div className="flex flex-col gap-1">
       <div
         className={cn(
-          "section-label whitespace-nowrap px-2 text-white/40 transition-opacity duration-200 ease-out",
+          "section-label whitespace-nowrap px-2 text-sidebar-foreground/40 transition-opacity duration-200 ease-out",
           collapsed ? "opacity-0" : "opacity-100",
         )}
         aria-hidden={collapsed}
@@ -100,8 +100,8 @@ function NavItem({
         cn(
           "group flex h-9 items-center rounded-md px-2 text-sm transition-colors",
           isActive
-            ? "bg-white/10 text-white"
-            : "text-white/70 hover:bg-white/5 hover:text-white",
+            ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground",
         )
       }
     >
@@ -110,7 +110,7 @@ function NavItem({
           <span
             className={cn(
               "flex h-5 w-5 shrink-0 items-center justify-center transition-colors",
-              isActive ? "text-status-fix" : "text-white/60 group-hover:text-white/90",
+              isActive ? "text-status-fix" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground/90",
             )}
           >
             {icon}
@@ -134,13 +134,13 @@ function FooterBlock({ collapsed }: { collapsed: boolean }) {
   return (
     <div
       className={cn(
-        "mt-auto overflow-hidden border-t border-sidebar-border text-xs text-white/50",
+        "mt-auto overflow-hidden border-t border-sidebar-border text-xs text-sidebar-foreground/50",
         COLLAPSE_TRANSITION,
         collapsed ? "max-h-0 opacity-0 py-0" : "max-h-16 opacity-100 py-4",
       )}
     >
       <div className="px-5 whitespace-nowrap">
-        <div className="font-medium text-white/70">Local instance</div>
+        <div className="font-medium text-sidebar-foreground/70">Local instance</div>
         <div className="entity-id mt-0.5">localhost:8765</div>
       </div>
     </div>

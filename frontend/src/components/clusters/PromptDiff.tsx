@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
 
 interface Props {
   prompt: string | null;
@@ -30,22 +30,17 @@ export function PromptDiff({ prompt }: Props) {
 
   if (!parsed) {
     return (
-      <Card padding="md" className="border border-dashed border-border bg-card text-center">
-        <p className="text-sm text-muted-foreground">No prompt artifact yet.</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          The fixer writes one once a candidate prompt has been proposed.
-        </p>
-      </Card>
+      <EmptyState hint="The fixer writes one once a candidate prompt has been proposed.">
+        No prompt artifact yet.
+      </EmptyState>
     );
   }
 
   if (parsed.baseline === parsed.proposed) {
     return (
-      <Card padding="md" className="border border-dashed border-border bg-card text-center">
-        <p className="text-sm text-muted-foreground">
-          The proposed prompt is identical to the baseline.
-        </p>
-      </Card>
+      <EmptyState hint="There is nothing to ship here. Reject or dismiss this cluster so the next cycle can try a different angle.">
+        The proposed prompt is identical to the baseline.
+      </EmptyState>
     );
   }
 

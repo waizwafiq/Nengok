@@ -5,6 +5,9 @@ import { ClusterCard } from "../components/clusters/ClusterCard";
 import { PageHeader } from "../components/layout/PageHeader";
 import { useLayoutBreadcrumb } from "../components/layout/useLayout";
 import { Card } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { ErrorState, RestartServerHint } from "../components/ui/ErrorState";
+import { InlineCode } from "../components/ui/InlineCode";
 import { Skeleton } from "../components/ui/Skeleton";
 import type { ClusterStatus } from "../types/cluster";
 import { cn } from "../lib/cn";
@@ -80,22 +83,20 @@ export function ClustersPage() {
       {isLoading ? <ClusterListSkeleton /> : null}
 
       {isError ? (
-        <Card padding="lg">
-          <p className="text-sm text-destructive">
-            Could not load clusters. Is the Nengok server running?
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Start it with{" "}
-            <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">
-              nengok dashboard
-            </code>{" "}
-            and reload this page.
-          </p>
-        </Card>
+        <ErrorState
+          title="Could not load clusters. Is the Nengok server running?"
+          hint={<RestartServerHint />}
+        />
       ) : null}
 
       {!isLoading && !isError && clusters.length === 0 ? (
-        <EmptyState filtered={activeStatus !== "all"} />
+        activeStatus !== "all" ? (
+          <EmptyState>No clusters match this filter. Try a different status.</EmptyState>
+        ) : (
+          <EmptyState>
+            No clusters yet. Run <InlineCode>nengok run</InlineCode> to detect failures.
+          </EmptyState>
+        )
       ) : null}
 
       <ul className="space-y-3">
@@ -198,27 +199,6 @@ function ClusterListSkeleton() {
         </li>
       ))}
     </ul>
-  );
-}
-
-function EmptyState({ filtered }: { filtered: boolean }) {
-  if (filtered) {
-    return (
-      <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          No clusters match this filter. Try a different status.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center">
-      <p className="text-sm text-muted-foreground">
-        No clusters yet. Run{" "}
-        <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code> to
-        detect failures.
-      </p>
-    </div>
   );
 }
 

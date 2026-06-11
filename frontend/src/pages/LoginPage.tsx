@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { storeToken } from "../api/client";
 import { Button } from "../components/ui/Button";
 import { Card, CardDescription, CardHeader, CardTitle } from "../components/ui/Card";
+import { InlineCode } from "../components/ui/InlineCode";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -27,9 +28,8 @@ export function LoginPage() {
           <div>
             <CardTitle>Sign in to Nengok</CardTitle>
             <CardDescription>
-              Paste the value of <code>dashboard_auth_token</code> from
-              {" "}
-              <code>~/.nengok/config.toml</code>.
+              Paste the value of <InlineCode>dashboard_auth_token</InlineCode> from{" "}
+              <InlineCode>~/.nengok/config.toml</InlineCode>.
             </CardDescription>
           </div>
         </CardHeader>

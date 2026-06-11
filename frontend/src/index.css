@@ -40,6 +40,7 @@
   --color-status-diagnosed: oklch(0.62 0.19 264);
   --color-status-fix: oklch(0.596 0.145 163.225);
   --color-status-escalated: oklch(0.577 0.245 27.325);
+  --color-status-failed: oklch(0.42 0.18 27.325);
   --color-status-dismissed: oklch(0.68 0.025 256);
 
   --color-neutral-50: oklch(0.985 0.003 247.86);
@@ -135,6 +136,7 @@
     color: var(--muted-foreground);
   }
 
+  /* For machine identifiers only (span ids, hostnames); never prose or counts. */
   .entity-id {
     font-family: var(--font-mono);
     font-size: 11px;

@@ -1,6 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { flagMergeWrong } from "../../api/approvals";
+import { parseMemberSpans } from "../../lib/clusterHelpers";
+import { SectionHeader } from "../layout/SectionHeader";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 
@@ -17,7 +19,7 @@ interface Props {
  * is nothing to split.
  */
 export function WrongMergePanel({ clusterId, memberSpansJson, onDetached }: Props) {
-  const members = parseMembers(memberSpansJson);
+  const members = parseMemberSpans(memberSpansJson);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const detach = useMutation({
@@ -45,8 +47,8 @@ export function WrongMergePanel({ clusterId, memberSpansJson, onDetached }: Prop
   }
 
   return (
-    <section className="space-y-3">
-      <h2 className="section-label">Wrong merge?</h2>
+    <section>
+      <SectionHeader title="Wrong merge?" />
       <Card>
         <p className="text-xs text-muted-foreground">
           Select the member spans that describe a different root cause. Detaching them records
@@ -85,13 +87,4 @@ export function WrongMergePanel({ clusterId, memberSpansJson, onDetached }: Prop
       </Card>
     </section>
   );
-}
-
-function parseMembers(json: string): string[] {
-  try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
 }

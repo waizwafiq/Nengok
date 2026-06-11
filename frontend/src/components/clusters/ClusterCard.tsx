@@ -1,8 +1,11 @@
 import { Link } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
+import { parseMemberSpans } from "../../lib/clusterHelpers";
+import { formatDateTime } from "../../lib/format";
 import { StatusBadge } from "../StatusBadge";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
+import { LinkButton } from "../ui/LinkButton";
 import type { Cluster } from "../../types/cluster";
 
 interface Props {
@@ -10,7 +13,7 @@ interface Props {
 }
 
 export function ClusterCard({ cluster }: Props) {
-  const memberCount = parseMemberCount(cluster.member_spans_json);
+  const memberCount = parseMemberSpans(cluster.member_spans_json).length;
   return (
     <Card className="transition-colors hover:ring-primary/40">
       <div className="flex items-start justify-between gap-4">
@@ -27,43 +30,20 @@ export function ClusterCard({ cluster }: Props) {
           </div>
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{cluster.description}</p>
           <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="entity-id">
+            <span className="tabular-nums">
               {memberCount} member span{memberCount === 1 ? "" : "s"}
             </span>
-            <span aria-hidden="true" className="text-muted-foreground/40">·</span>
-            <span>Updated {formatTimestamp(cluster.updated_at)}</span>
+            <span aria-hidden="true" className="text-muted-foreground/40">
+              ·
+            </span>
+            <span>Updated {formatDateTime(cluster.updated_at)}</span>
           </div>
         </div>
-        <Link
-          to={`/clusters/${cluster.cluster_id}`}
-          className="flex h-8 shrink-0 items-center gap-1 self-center rounded-md border border-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-        >
+        <LinkButton to={`/clusters/${cluster.cluster_id}`} className="self-center">
           View
           <ChevronRight className="h-3.5 w-3.5" />
-        </Link>
+        </LinkButton>
       </div>
     </Card>
   );
-}
-
-function parseMemberCount(json: string): number {
-  try {
-    const parsed = JSON.parse(json);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function formatTimestamp(iso: string): string {
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) {
-    return iso;
-  }
-  return dt.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

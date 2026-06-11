@@ -1,8 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { fetchLatestExperiment } from "../../api/experiments";
+import { cn } from "../../lib/cn";
+import { caseKey } from "../../lib/experimentHelpers";
+import { CaseOutcomeStrip } from "../charts/CaseOutcomeStrip";
+import { PassRateComparison } from "../charts/PassRateComparison";
 import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
+import { ErrorState } from "../ui/ErrorState";
+import { InlineCode } from "../ui/InlineCode";
 import { Skeleton } from "../ui/Skeleton";
-import type { ExperimentCase, ExperimentSummary } from "../../types/experiment";
+import type { ExperimentCase } from "../../types/experiment";
 
 interface Props {
   clusterId: string;
@@ -17,6 +25,7 @@ interface Props {
  * collapse the table.
  */
 export function ExperimentTable({ clusterId }: Props) {
+  const [hoveredCaseId, setHoveredCaseId] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["experiments", clusterId, "latest"],
     queryFn: () => fetchLatestExperiment(clusterId),
@@ -30,29 +39,30 @@ export function ExperimentTable({ clusterId }: Props) {
 
   if (query.isError) {
     return (
-      <Card padding="md">
-        <p className="text-sm text-destructive">
-          Could not load the latest experiment for this cluster.
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Re-run the cycle with{" "}
-          <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code> to
-          generate a fresh experiment.
-        </p>
-      </Card>
+      <ErrorState
+        title="Could not load the latest experiment for this cluster."
+        hint={
+          <>
+            Re-run the cycle with <InlineCode>nengok run</InlineCode> to generate a fresh
+            experiment.
+          </>
+        }
+      />
     );
   }
 
   const data = query.data;
   if (!data) {
     return (
-      <Card padding="md" className="border border-dashed border-border bg-card text-center">
-        <p className="text-sm text-muted-foreground">No experiment has been run for this cluster yet.</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Trigger one with{" "}
-          <code className="font-mono text-xs rounded bg-muted px-1.5 py-0.5">nengok run</code>.
-        </p>
-      </Card>
+      <EmptyState
+        hint={
+          <>
+            Trigger one with <InlineCode>nengok run</InlineCode>.
+          </>
+        }
+      >
+        No experiment has been run for this cluster yet.
+      </EmptyState>
     );
   }
 
@@ -60,76 +70,68 @@ export function ExperimentTable({ clusterId }: Props) {
 
   return (
     <div className="space-y-3">
-      <PassRateSummary data={data} />
+      <PassRateComparison summary={data} />
+      <CaseOutcomeStrip
+        cases={data.per_case}
+        hoveredCaseId={hoveredCaseId}
+        onHover={setHoveredCaseId}
+      />
       <Card padding="none" className="overflow-x-auto">
         <table className="min-w-full text-xs">
-          <thead className="bg-muted/40 text-muted-foreground uppercase tracking-wider">
+          <thead className="bg-muted/40">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold">Case</th>
-              <th className="px-3 py-2 text-left font-semibold">Input</th>
-              <th className="px-3 py-2 text-left font-semibold">Output</th>
+              <th className="section-label px-3 py-2 text-left">Case</th>
+              <th className="section-label px-3 py-2 text-left">Input</th>
+              <th className="section-label px-3 py-2 text-left">Output</th>
               {evaluatorColumns.map((key) => (
-                <th key={key} className="px-3 py-2 text-left font-semibold">
+                <th key={key} className="section-label px-3 py-2 text-left">
                   {key}
                 </th>
               ))}
-              <th className="px-3 py-2 text-left font-semibold">Passed</th>
+              <th className="section-label px-3 py-2 text-left">Passed</th>
             </tr>
           </thead>
           <tbody>
-            {data.per_case.map((row, index) => (
-              <tr key={row.case_id ?? index} className="border-t border-border align-top">
-                <td className="px-3 py-2 font-mono text-foreground">
-                  {row.case_id ?? `#${index + 1}`}
-                </td>
-                <td className="px-3 py-2 font-mono text-foreground max-w-xs truncate">
-                  {jsonPreview(row.input)}
-                </td>
-                <td className="px-3 py-2 font-mono text-foreground max-w-xs truncate">
-                  {jsonPreview(row.output)}
-                </td>
-                {evaluatorColumns.map((key) => (
-                  <td key={key} className="px-3 py-2">
-                    <EvaluatorCell value={row.evaluators?.[key]} />
-                  </td>
-                ))}
-                <td className="px-3 py-2">
-                  {row.passed === undefined ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : row.passed ? (
-                    <span className="text-status-fix">✓</span>
-                  ) : (
-                    <span className="text-status-escalated">✗</span>
+            {data.per_case.map((row, index) => {
+              const key = caseKey(row, index);
+              return (
+                <tr
+                  key={key}
+                  onMouseEnter={() => setHoveredCaseId(key)}
+                  onMouseLeave={() => setHoveredCaseId(null)}
+                  className={cn(
+                    "border-t border-border align-top",
+                    hoveredCaseId === key && "bg-muted/40",
                   )}
-                </td>
-              </tr>
-            ))}
+                >
+                  <td className="px-3 py-2 font-mono text-foreground">{key}</td>
+                  <td className="px-3 py-2 font-mono text-foreground max-w-xs truncate">
+                    {jsonPreview(row.input)}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-foreground max-w-xs truncate">
+                    {jsonPreview(row.output)}
+                  </td>
+                  {evaluatorColumns.map((column) => (
+                    <td key={column} className="px-3 py-2">
+                      <EvaluatorCell value={row.evaluators?.[column]} />
+                    </td>
+                  ))}
+                  <td className="px-3 py-2">
+                    {row.passed === undefined ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : row.passed ? (
+                      <span className="text-status-fix">✓</span>
+                    ) : (
+                      <span className="text-status-escalated">✗</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Card>
     </div>
-  );
-}
-
-function PassRateSummary({ data }: { data: ExperimentSummary }) {
-  return (
-    <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-4">
-      <PassRateCell label="Baseline" value={data.baseline_pass_rate} />
-      <PassRateCell label="Fix" value={data.fix_pass_rate} />
-      <PassRateCell label="Golden baseline" value={data.golden_baseline_pass_rate} />
-      <PassRateCell label="Golden fix" value={data.golden_fix_pass_rate} />
-    </div>
-  );
-}
-
-function PassRateCell({ label, value }: { label: string; value: number }) {
-  return (
-    <Card padding="sm">
-      <div className="section-label">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums text-foreground">
-        {(value * 100).toFixed(0)}%
-      </div>
-    </Card>
   );
 }
 
@@ -138,7 +140,11 @@ function EvaluatorCell({ value }: { value: boolean | number | string | undefined
     return <span className="text-muted-foreground">—</span>;
   }
   if (typeof value === "boolean") {
-    return <span className={value ? "text-status-fix" : "text-status-escalated"}>{value ? "✓" : "✗"}</span>;
+    return (
+      <span className={value ? "text-status-fix" : "text-status-escalated"}>
+        {value ? "✓" : "✗"}
+      </span>
+    );
   }
   if (typeof value === "number") {
     return <span>{Number.isInteger(value) ? value : value.toFixed(2)}</span>;
@@ -149,14 +155,17 @@ function EvaluatorCell({ value }: { value: boolean | number | string | undefined
 function ExperimentTableSkeleton() {
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} padding="sm">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="mt-2 h-5 w-12" />
-          </Card>
-        ))}
-      </div>
+      <Card>
+        <div className="space-y-4">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div key={index}>
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-2 h-2.5 w-full" />
+              <Skeleton className="mt-1.5 h-2.5 w-full" />
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card padding="md">
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, index) => (

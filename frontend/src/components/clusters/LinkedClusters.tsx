@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { fetchClusterLinks } from "../../api/clusters";
 import { StatusBadge } from "../StatusBadge";
+import { SectionHeader } from "../layout/SectionHeader";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
 
@@ -29,7 +30,7 @@ export function LinkedClusters({ clusterId }: Props) {
 
   return (
     <section>
-      <h2 className="section-label mb-2">Also affects</h2>
+      <SectionHeader title="Also affects" />
       <Card padding="none">
         <ul className="divide-y divide-border">
           {links.data.map((link) => (

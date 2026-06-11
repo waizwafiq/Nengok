@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchClusterApprovals } from "../../api/approvals";
+import { formatDateTime } from "../../lib/format";
 import type { ApprovalDecision, ApprovalRecord } from "../../types/approval";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
+import { ErrorState, RestartServerHint } from "../ui/ErrorState";
 import { Skeleton } from "../ui/Skeleton";
 
 interface Props {
@@ -38,21 +41,13 @@ export function ApprovalHistory({ clusterId }: Props) {
   }
 
   if (approvals.isError) {
-    return (
-      <Card padding="md">
-        <p className="text-sm text-destructive">Could not load approval history.</p>
-      </Card>
-    );
+    return <ErrorState title="Could not load approval history." hint={<RestartServerHint />} />;
   }
 
   const rows: ApprovalRecord[] = Array.isArray(approvals.data) ? approvals.data : [];
   if (rows.length === 0) {
     return (
-      <Card padding="md" className="border border-dashed border-border bg-card text-center">
-        <p className="text-sm text-muted-foreground">
-          No approval decisions have been recorded for this cluster yet.
-        </p>
-      </Card>
+      <EmptyState>No approval decisions have been recorded for this cluster yet.</EmptyState>
     );
   }
 
@@ -81,7 +76,7 @@ function ApprovalRow({ row }: { row: ApprovalRecord }) {
           <span className="text-foreground font-medium">{row.reviewer ?? "anonymous"}</span>
         </div>
         <time className="text-xs text-muted-foreground tabular-nums" dateTime={row.created_at}>
-          {formatTimestamp(row.created_at)}
+          {formatDateTime(row.created_at)}
         </time>
       </div>
       {reason ? (
@@ -114,12 +109,4 @@ function ApprovalHistorySkeleton() {
       </div>
     </Card>
   );
-}
-
-function formatTimestamp(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return date.toLocaleString();
 }

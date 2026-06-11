@@ -16,14 +16,14 @@ export function TopBar() {
     clusters.data?.filter((c) => c.status === "open" || c.status === "diagnosed").length ?? 0;
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between px-4 text-sm text-white">
+    <header className="flex h-14 shrink-0 items-center justify-between px-4 text-sm text-sidebar-foreground">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           onClick={toggleSidebar}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-pressed={!sidebarCollapsed}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
         >
           {sidebarCollapsed ? (
             <PanelLeftOpen className="h-4 w-4" />
@@ -40,7 +40,7 @@ export function TopBar() {
         <button
           type="button"
           aria-label="Help"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
         >
           <CircleHelp className="h-4 w-4" />
         </button>
@@ -56,19 +56,19 @@ function BreadcrumbTrail({ trail }: { trail: BreadcrumbItem[] }) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex min-w-0 items-center gap-1 truncate text-xs text-white/60"
+      className="flex min-w-0 items-center gap-1 truncate text-xs text-sidebar-foreground/60"
     >
       {trail.map((item, index) => {
         const isLast = index === trail.length - 1;
         return (
           <span key={`${item.label}-${index}`} className="flex items-center gap-1">
-            {index > 0 ? <ChevronRight className="h-3 w-3 text-white/30" /> : null}
+            {index > 0 ? <ChevronRight className="h-3 w-3 text-sidebar-foreground/30" /> : null}
             {item.href && !isLast ? (
-              <Link to={item.href} className="hover:text-white transition-colors">
+              <Link to={item.href} className="hover:text-sidebar-foreground transition-colors">
                 {item.label}
               </Link>
             ) : (
-              <span className={isLast ? "font-medium text-white" : ""}>{item.label}</span>
+              <span className={isLast ? "font-medium text-sidebar-foreground" : ""}>{item.label}</span>
             )}
           </span>
         );
@@ -79,7 +79,7 @@ function BreadcrumbTrail({ trail }: { trail: BreadcrumbItem[] }) {
 
 function StatusPill({ live, openCount }: { live: boolean; openCount: number }) {
   return (
-    <div className="flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1 text-[11px] text-white/80">
+    <div className="flex items-center gap-2 rounded-full bg-sidebar-foreground/5 px-2.5 py-1 text-[11px] text-sidebar-foreground/80">
       <StatusDot live={live} />
       <span>{openCount} active</span>
     </div>
